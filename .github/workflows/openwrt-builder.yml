@@ -1,10 +1,7 @@
 name: ImmortalWrt MT798x Builder
 
 on:
-  schedule:
-    - cron: '0 22 * * *'  # 北京时间6点（UTC 22:00）
-  workflow_dispatch:
-  repository_dispatch:
+  workflow_dispatch:  # 仅手动触发，便于调试
 
 env:
   REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-24.10
@@ -15,7 +12,6 @@ env:
   EEPROM_FILE: eeprom/MT7981_iPAiLNA_EEPROM.bin
   TARGET_EEPROM_PATH: package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom/MT7981_iPAiLNA_EEPROM.bin
   UPLOAD_FIRMWARE: true
-  UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
   ENABLE_5G_25DB: ${{ github.event_name == 'workflow_dispatch' && inputs.enable_5g_25db || 'true' }}
   DEVICE_MODEL: ${{ github.event_name == 'workflow_dispatch' && inputs.device_model || 'cmcc_rax3000m-emmc-usboffload' }}
@@ -45,48 +41,64 @@ jobs:
       - name: Clone source code
         working-directory: /workdir
         run: |
-          git clone $REPO_URL -b $REPO_BRANCH openwrt
+          echo "Cloning $REPO_URL branch $REPO_BRANCH"
+          git clone $REPO_URL -b $REPO_BRANCH openwrt --depth 1
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+          ls -la openwrt
 
       - name: Load custom feeds
         run: |
-          chmod +x $DIY_P1_SH || echo "Warning: $DIY_P1_SH not found"
-          cd openwrt
-          $GITHUB_WORKSPACE/$DIY_P1_SH || echo "Warning: $DIY_P1_SH failed"
+          if [ -f $DIY_P1_SH ]; then
+            chmod +x $DIY_P1_SH
+            cd openwrt
+            $GITHUB_WORKSPACE/$DIY_P1_SH || { echo "Error: $DIY_P1_SH failed"; exit 1; }
+          else
+            echo "Warning: $DIY_P1_SH not found, skipping"
+          fi
 
       - name: Update and install feeds
         run: |
           cd openwrt
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+          ./scripts/feeds update -a || { echo "Error: Feeds update failed"; exit 1; }
+          ./scripts/feeds install -a || { echo "Error: Feeds install failed"; exit 1; }
 
       - name: Apply 5G 25dB EEPROM if enabled
         if: env.ENABLE_5G_25DB == 'true'
         run: |
           cd openwrt
-          mkdir -p $(dirname $TARGET_EEPROM_PATH)
-          cp $GITHUB_WORKSPACE/$EEPROM_FILE $TARGET_EEPROM_PATH || echo "Error: EEPROM file not found"
-          echo "Applied 5G 25dB EEPROM"
+          if [ -f $GITHUB_WORKSPACE/$EEPROM_FILE ]; then
+            mkdir -p $(dirname $TARGET_EEPROM_PATH)
+            cp $GITHUB_WORKSPACE/$EEPROM_FILE $TARGET_EEPROM_PATH
+            echo "Applied 5G 25dB EEPROM"
+          else
+            echo "Error: $EEPROM_FILE not found"
+            exit 1
+          fi
 
       - name: Load custom configuration
         run: |
-          if [ -e $CONFIG_FILE ]; then
-            cp $GITHUB_WORKSPACE/$CONFIG_FILE openwrt/.config
+          cd openwrt
+          if [ -f $GITHUB_WORKSPACE/$CONFIG_FILE ]; then
+            cp $GITHUB_WORKSPACE/$CONFIG_FILE .config
+            echo "Loaded $CONFIG_FILE"
           else
-            echo "Error: $CONFIG_FILE not found in repository"
+            echo "Error: $CONFIG_FILE not found"
             exit 1
           fi
-          chmod +x $DIY_P2_SH || echo "Warning: $DIY_P2_SH not found"
-          cd openwrt
-          $GITHUB_WORKSPACE/$DIY_P2_SH || echo "Warning: $DIY_P2_SH failed"
+          if [ -f $GITHUB_WORKSPACE/$DIY_P2_SH ]; then
+            chmod +x $GITHUB_WORKSPACE/$DIY_P2_SH
+            $GITHUB_WORKSPACE/$DIY_P2_SH || { echo "Error: $DIY_P2_SH failed"; exit 1; }
+          else
+            echo "Warning: $DIY_P2_SH not found, skipping"
+          fi
           echo "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_${{ matrix.device }}=y" >> .config
-          make defconfig
-          cat .config > config_dump.txt  # 输出最终配置用于调试
+          make defconfig || { echo "Error: make defconfig failed"; cat .config; exit 1; }
+          cat .config > config_dump.txt
 
       - name: Download package
         run: |
           cd openwrt
-          make download -j8
+          make download -j8 || { echo "Error: make download failed"; exit 1; }
           find dl -size -1024c -exec rm -f {} \;
 
       - name: Compile the firmware
@@ -94,15 +106,15 @@ jobs:
         run: |
           cd openwrt
           echo "Starting compilation for ${{ matrix.device }}"
-          make -j$(nproc) || make -j1 V=s 2> compile_error.log
-          if [ $? -ne 0 ]; then
-            echo "Compilation failed, see compile_error.log"
-            cat compile_error.log
-            exit 1
-          fi
+          make -j$(nproc) V=s 2> compile_error.log || {
+            echo "Compilation failed, see compile_error.log";
+            cat compile_error.log;
+            exit 1;
+          }
           echo "status=success" >> $GITHUB_OUTPUT
           echo "DEVICE_NAME=_${{ matrix.device }}" >> $GITHUB_ENV
           echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+          ls -la bin/targets/*/*
 
       - name: Upload debug logs
         if: failure()
@@ -112,15 +124,21 @@ jobs:
           path: |
             openwrt/.config
             openwrt/compile_error.log
+            openwrt/config_dump.txt
 
       - name: Organize files
         id: organize
         if: steps.compile.outputs.status == 'success' && !cancelled()
         run: |
           cd openwrt/bin/targets/*/*
-          rm -rf packages
-          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-          echo "status=success" >> $GITHUB_OUTPUT
+          if [ -d . ]; then
+            rm -rf packages
+            echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            echo "Error: No firmware files found in bin/targets"
+            exit 1
+          fi
 
       - name: Upload firmware
         uses: actions/upload-artifact@main
