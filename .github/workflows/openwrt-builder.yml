@@ -140,21 +140,56 @@ jobs:
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P1_SH
 
+    - name: 确保 Feeds 源可用
+      run: |
+        cd openwrt
+        if ! grep -q "src-git packages" feeds.conf.default; then
+          echo "添加 OpenWrt 官方 Feeds..."
+          echo "src-git packages https://git.openwrt.org/feed/packages.git^v24.10.0" >> feeds.conf.default
+          echo "src-git luci https://git.openwrt.org/project/luci.git^v24.10.0" >> feeds.conf.default
+          echo "src-git routing https://git.openwrt.org/feed/routing.git^v24.10.0" >> feeds.conf.default
+        fi
+
+    - name: 检查 Feeds 配置
+      run: |
+        cd openwrt
+        cat feeds.conf.default
+
     - name: 修复 kmod-usb-gadget-ncm 依赖
       run: |
         cd openwrt
         if ! grep -q "kmod-usb-gadget-ncm" feeds.conf.default; then
           echo "添加 kmod-usb-gadget-ncm 到 Feeds..."
-          echo "src-git custom https://github.com/openwrt/openwrt.git^openwrt-23.05" >> feeds.conf.default
+          echo "src-git custom https://github.com/openwrt/openwrt.git^v24.10.0" >> feeds.conf.default
           ./scripts/feeds update -a
           ./scripts/feeds install kmod-usb-gadget-ncm
         fi
 
     - name: 更新 Feeds
-      run: cd openwrt && ./scripts/feeds update -a
+      run: |
+        cd openwrt
+        for attempt in 1 2 3; do
+          ./scripts/feeds update -a && break || {
+            if [ $attempt -lt 3 ]; then
+              echo "尝试 $attempt 失败，5 秒后重试..."
+              sleep 5
+            else
+              echo "更新 Feeds 失败，退出"
+              exit 1
+            fi
+          }
+        done
 
     - name: 安装 Feeds
       run: cd openwrt && ./scripts/feeds install -a
+
+    - name: 移除无关目标（zynq）
+      run: |
+        cd openwrt
+        if [ -d feeds/custom/target/linux/zynq ]; then
+          rm -rf feeds/custom/target/linux/zynq
+          echo "已移除 zynq 目标"
+        fi
 
     - name: 加载自定义配置并设置目标设备
       run: |
@@ -171,6 +206,7 @@ jobs:
           $GITHUB_WORKSPACE/$DIY_P2_SH
         else
           echo "警告：$DIY_P2_SH 文件不存在，跳过执行"
+          exit 1
         fi
 
     - name: 应用 5G 25dB EEPROM 修改（可选）
@@ -194,7 +230,14 @@ jobs:
       run: |
         cd openwrt
         echo -e "$(nproc) thread compile for ${{ matrix.device }}"
-        make -j$(nproc) || make -j1 || make -j1 V=s
+        make -j$(nproc) V=s || {
+          echo "第一次编译失败，尝试单线程编译..."
+          make -j1 V=s || {
+            echo "单线程编译失败，输出详细日志..."
+            make -j1 V=s
+            exit 1
+          }
+        }
         echo "status=success" >> $GITHUB_OUTPUT
         echo "DEVICE_NAME=_${{ matrix.device }}" >> $GITHUB_ENV
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
@@ -214,10 +257,17 @@ jobs:
       id: organize
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
-        cd openwrt/bin/targets/*/*
-        rm -rf packages
-        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-        echo "status=success" >> $GITHUB_OUTPUT
+        cd openwrt
+        if [ -d "bin/targets/mediatek/mt7981" ]; then
+          cd bin/targets/mediatek/mt7981
+          rm -rf packages
+          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT
+        else
+          echo "错误：未找到固件文件，编译可能失败"
+          echo "status=failure" >> $GITHUB_OUTPUT
+          exit 1
+        fi
 
     - name: 上传固件目录
       uses: actions/upload-artifact@v4
