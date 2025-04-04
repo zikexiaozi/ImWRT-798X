@@ -9,8 +9,23 @@ on:
         required: true
         type: choice
         options:
-          - cmcc_rax3000m-usboffload
+          - abt_asr3000
+          - cetron_ct3003
+          - cmcc_a10
           - cmcc_rax3000m-emmc-usboffload
+          - cmcc_rax3000m-usboffload
+          - h3c_nx30pro
+          - imou_lc-hx3001
+          - jcg_q30
+          - konka_komi-a31
+          - livinet_zr-3020
+          - mt7981-360-t7-108M
+          - mt7981-clt-r30b1
+          - mt7981-clt-r30b1-112M
+          - xiaomi_mi-router-ax3000t
+          - xiaomi_mi-router-ax3000t-stock
+          - xiaomi_mi-router-wr30u-112m
+          - xiaomi_mi-router-wr30u-stock
       enable_5g_25db:
         description: '启用 5G WiFi 25dB 支持'
         required: false
@@ -149,14 +164,14 @@ jobs:
       run: |
         cd openwrt
         mkdir -p $(dirname $TARGET_EEPROM_PATH)
-        printf '\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B' > /tmp/tmp.bin &&	dd if=/tmp/tmp.bin of=$TARGET_EEPROM_PATH bs=1 seek=$((0x445)) conv=notrunc
+        printf '\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B' > /tmp/tmp.bin && dd if=/tmp/tmp.bin of=$TARGET_EEPROM_PATH bs=1 seek=$((0x445)) conv=notrunc
         echo "已应用 5G 25dB EEPROM 修改，偏移量 0x445"
 
     - name: 下载软件包
       id: package
       run: |
         cd openwrt
-        make download -j8
+        make  make download -j8
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
