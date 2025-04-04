@@ -9,11 +9,13 @@ on:
         required: true
         type: choice
         options:
+          - cmcc_rax3000m
+          - cmcc_rax3000m-emmc
+           - cmcc_rax3000m-emmc-usboffload
+          - cmcc_rax3000m-usboffload         
           - abt_asr3000
           - cetron_ct3003
           - cmcc_a10
-          - cmcc_rax3000m-emmc-usboffload
-          - cmcc_rax3000m-usboffload
           - h3c_nx30pro
           - imou_lc-hx3001
           - jcg_q30
