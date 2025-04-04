@@ -1,0 +1,159 @@
+name: ImmortalWrt MT798x Builder
+
+on:
+  schedule:
+    - cron: '0 22 * * *'  # 北京时间6点（UTC 22:00，前一天）
+  workflow_dispatch:      # 支持手动触发
+  repository_dispatch:    # 支持外部触发
+
+env:
+  REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-24.10
+  REPO_BRANCH: 2410
+  CONFIG_FILE: 2410.config
+  DIY_P1_SH: scripts/diy-part1.sh
+  DIY_P2_SH: scripts/diy-part2.sh
+  EEPROM_FILE: eeprom/MT7981_iPAiLNA_EEPROM.bin
+  TARGET_EEPROM_PATH: package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom/MT7981_iPAiLNA_EEPROM.bin
+  UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
+  TZ: Asia/Shanghai
+  ENABLE_5G_25DB: ${{ github.event_name == 'workflow_dispatch' && inputs.enable_5g_25db || 'true' }}  # 默认启用，workflow_dispatch 可选择
+  DEVICE_MODEL: ${{ github.event_name == 'workflow_dispatch' && inputs.device_model || 'cmcc_rax3000m-emmc-usboffload' }}  # 默认型号，手动可选择
+
+jobs:
+  check-update:
+    runs-on: ubuntu-22.04
+    outputs:
+      needs_build: ${{ steps.check.outputs.needs_build }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+
+      - name: Check for updates
+        id: check
+        run: |
+          git ls-remote --heads $REPO_URL $REPO_BRANCH | awk '{print $1}' > new_commit.txt
+          [ -f last_commit.txt ] && mv last_commit.txt old_commit.txt || echo "" > old_commit.txt
+          echo "$(cat new_commit.txt)" > last_commit.txt
+          if [ "$(cat new_commit.txt)" != "$(cat old_commit.txt)" ]; then
+            echo "needs_build=true" >> $GITHUB_OUTPUT
+          else
+            echo "needs_build=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload last commit
+        uses: actions/upload-artifact@main
+        with:
+          name: last_commit
+          path: last_commit.txt
+
+  build:
+    needs: check-update
+    if: needs.check-update.outputs.needs_build == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch'
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        device: 
+          - cmcc_rax3000m-emmc-usboffload
+          - cmcc_rax3000m-usboffload
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+
+      - name: Initialization environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean
+          sudo timedatectl set-timezone "$TZ"
+          sudo mkdir -p /workdir
+          sudo chown $USER:$GROUPS /workdir
+
+      - name: Clone source code
+        working-directory: /workdir
+        run: |
+          df -hT $PWD
+          git clone $REPO_URL -b $REPO_BRANCH openwrt
+          ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+
+      - name: Load custom feeds
+        run: |
+          chmod +x $DIY_P1_SH
+          cd openwrt
+          $GITHUB_WORKSPACE/$DIY_P1_SH
+
+      - name: Update and install feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Apply 5G 25dB EEPROM if enabled
+        if: env.ENABLE_5G_25DB == 'true'
+        run: |
+          cd openwrt
+          mkdir -p $(dirname $TARGET_EEPROM_PATH)
+          cp $GITHUB_WORKSPACE/$EEPROM_FILE $TARGET_EEPROM_PATH
+          echo "Applied 5G 25dB EEPROM"
+
+      - name: Load custom configuration
+        run: |
+          [ -e $CONFIG_FILE ] && cp $GITHUB_WORKSPACE/$CONFIG_FILE openwrt/.config
+          chmod +x $DIY_P2_SH
+          cd openwrt
+          $GITHUB_WORKSPACE/$DIY_P2_SH
+          echo "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_${{ matrix.device }}=y" >> .config
+          make defconfig
+
+      - name: Download package
+        run: |
+          cd openwrt
+          make download -j8
+          find dl -size -1024c -exec rm -f {} \;
+
+      - name: Compile the firmware
+        id: compile
+        run: |
+          cd openwrt
+          echo -e "$(nproc) thread compile for ${{ matrix.device }}"
+          make -j$(nproc) || make -j1 V=s
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "DEVICE_NAME=_${{ matrix.device }}" >> $GITHUB_ENV
+          echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+
+      - name: Organize files
+        id: organize
+        if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+        run: |
+          cd openwrt/bin/targets/*/*
+          rm -rf packages
+          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@main
+        if: steps.organize.outputs.status == 'success' && !cancelled()
+        with:
+          name: ImmortalWrt_${{ matrix.device }}${{ env.FILE_DATE }}
+          path: ${{ env.FIRMWARE }}
+
+      - name: Generate release tag
+        id: tag
+        if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+        run: |
+          echo "release_tag=$(date +"%Y.%m.%d-%H%M")_${{ matrix.device }}" >> $GITHUB_OUTPUT
+          echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: Upload firmware to release
+        uses: softprops/action-gh-release@master
+        if: steps.tag.outputs.status == 'success' && !cancelled()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.tag.outputs.release_tag }}
+          files: ${{ env.FIRMWARE }}/*
