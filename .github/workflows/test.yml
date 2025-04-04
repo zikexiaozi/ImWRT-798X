@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
 
 env:
-  REPO_URL: [invalid url, do not cite]
+  REPO_URL: "https://github.com/padavanonly/immortalwrt-mt798x-24.10"
   REPO_BRANCH: 2410
   CONFIG_FILE: 2410.config
   DIY_P1_SH: scripts/diy-part1.sh
