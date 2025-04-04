@@ -1,141 +1,216 @@
-name: ImmortalWrt MT798x Builder for cmcc_rax3000m-usboffload
+name: build-MT7981-24.10
+
 on:
+  repository_dispatch:
   workflow_dispatch:
+    inputs:
+      enable_5g_25db:
+        description: '启用 5G WiFi 25dB 支持'
+        required: false
+        default: 'true'
+        type: boolean
+
+permissions:
+  contents: write  # 允许创建 Release 和上传文件
 
 env:
   REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-24.10
   REPO_BRANCH: 2410
-  CONFIG_FILE: 2410.config
+  FEEDS_CONF: feeds.conf.default
+  BASE_CONFIG_FILE: 2410.config  # 基础配置文件
   DIY_P1_SH: scripts/diy-part1.sh
   DIY_P2_SH: scripts/diy-part2.sh
-  EEPROM_FILE: eeprom/MT7981_iPAiLNA_EEPROM.bin
-  TARGET_EEPROM_PATH: package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom/MT7981_iPAiLNA_EEPROM.bin
+  UPLOAD_BIN_DIR: false
   UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
+  TARGET_EEPROM_PATH: package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom/MT7981_iPAiLNA_EEPROM.bin
   ENABLE_5G_25DB: ${{ github.event_name == 'workflow_dispatch' && inputs.enable_5g_25db || 'true' }}
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        device:
+          - abt_asr3000
+          - cetron_ct3003
+          - cmcc_a10
+          - cmcc_rax3000m-emmc-usboffload
+          - cmcc_rax3000m-usboffload
+          - h3c_nx30pro
+          - imou_lc-hx3001
+          - jcg_q30
+          - konka_komi-a31
+          - livinet_zr-3020
+          - mt7981-360-t7-108M
+          - mt7981-clt-r30b1
+          - mt7981-clt-r30b1-112M
+          - xiaomi_mi-router-ax3000t
+          - xiaomi_mi-router-ax3000t-stock
+          - xiaomi_mi-router-wr30u-112m
+          - xiaomi_mi-router-wr30u-stock
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@main
+    - name: 检出代码
+      uses: actions/checkout@v4
 
-      - name: Initialization environment
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          sudo -E apt-get -qq update
-          sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
-          sudo timedatectl set-timezone "$TZ"
-          sudo mkdir -p /workdir
-          sudo chown $USER:$GROUPS /workdir
+    - name: 初始化环境
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+        sudo docker image prune --all --force
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+          bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib \
+          git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev \
+          libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev \
+          libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 \
+          python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo \
+          uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
+        sudo timedatectl set-timezone "$TZ"
+        sudo mkdir -p /workdir
+        sudo chown $USER:$GROUPS /workdir
 
-      - name: Clone source code
-        working-directory: /workdir
-        run: |
-          echo "Cloning $REPO_URL branch $REPO_BRANCH"
-          git clone $REPO_URL -b $REPO_BRANCH openwrt --depth 1
-          ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
-          ls -la openwrt
+    - name: 克隆源码
+      working-directory: /workdir
+      run: |
+        df -hT $PWD
+        git clone $REPO_URL -b $REPO_BRANCH openwrt --depth 1
+        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-      - name: Load custom feeds
-        run: |
-          if [ -f $DIY_P1_SH ]; then
-            chmod +x $DIY_P1_SH
-            cd openwrt
-            $GITHUB_WORKSPACE/$DIY_P1_SH || { echo "Error: $DIY_P1_SH failed"; exit 1; }
-          else
-            echo "Warning: $DIY_P1_SH not found, skipping"
-          fi
+    - name: 检查源码更新
+      working-directory: /workdir/openwrt
+      run: |
+        echo "检查 $REPO_URL 分支 $REPO_BRANCH 是否有更新"
+        git fetch origin $REPO_BRANCH
+        LOCAL_COMMIT=$(git rev-parse HEAD)
+        REMOTE_COMMIT=$(git rev-parse origin/$REPO_BRANCH)
+        if [ "$LOCAL_COMMIT" != "$REMOTE_COMMIT" ]; then
+          echo "发现新提交，更新源码..."
+          git pull origin $REPO_BRANCH
+        else
+          echo "源码已是最新，无需更新"
+        fi
 
-      - name: Update and install feeds
-        run: |
-          cd openwrt
-          ./scripts/feeds update -a || { echo "Error: Feeds update failed"; exit 1; }
-          ./scripts/feeds install -a || { echo "Error: Feeds install failed"; exit 1; }
+    - name: 加载自定义 Feeds
+      run: |
+        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
+        chmod +x $DIY_P1_SH
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_P1_SH
 
-      - name: Apply 5G 25dB EEPROM if enabled
-        if: env.ENABLE_5G_25DB == 'true'
-        run: |
-          cd openwrt
-          if [ -f $GITHUB_WORKSPACE/$EEPROM_FILE ]; then
-            mkdir -p $(dirname $TARGET_EEPROM_PATH)
-            cp $GITHUB_WORKSPACE/$EEPROM_FILE $TARGET_EEPROM_PATH
-            echo "Applied 5G 25dB EEPROM"
-          else
-            echo "Error: $EEPROM_FILE not found"
-            exit 1
-          fi
+    - name: 更新 Feeds
+      run: cd openwrt && ./scripts/feeds update -a
 
-      - name: Load custom configuration
-        run: |
-          cd openwrt
-          if [ -f $GITHUB_WORKSPACE/$CONFIG_FILE ]; then
-            cp $GITHUB_WORKSPACE/$CONFIG_FILE .config
-            echo "Loaded $CONFIG_FILE"
-          else
-            echo "Error: $CONFIG_FILE not found"
-            exit 1
-          fi
-          if [ -f $GITHUB_WORKSPACE/$DIY_P2_SH ]; then
-            chmod +x $GITHUB_WORKSPACE/$DIY_P2_SH
-            $GITHUB_WORKSPACE/$DIY_P2_SH || { echo "Error: $DIY_P2_SH failed"; exit 1; }
-          else
-            echo "Warning: $DIY_P2_SH not found, skipping"
-          fi
-          echo "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_cmcc_rax3000m-usboffload=y" >> .config
-          make defconfig || { echo "Error: make defconfig failed"; cat .config; exit 1; }
-          cat .config > config_dump.txt
+    - name: 安装 Feeds
+      run: cd openwrt && ./scripts/feeds install -a
 
-      - name: Download package
-        run: |
-          cd openwrt
-          make download -j8 || { echo "Error: make download failed"; exit 1; }
-          find dl -size -1024c -exec rm -f {} \;
+    - name: 加载自定义配置并设置目标设备
+      run: |
+        [ -e files ] && mv files openwrt/files
+        [ -e $BASE_CONFIG_FILE ] && cp $BASE_CONFIG_FILE openwrt/.config
+        cd openwrt
+        # 动态设置目标设备
+        sed -i "/CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_/d" .config
+        echo "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_${{ matrix.device }}=y" >> .config
+        echo "CONFIG_TARGET_DEVICE_PACKAGES_mediatek_mt7981_DEVICE_${{ matrix.device }}=\"\"" >> .config
+        make defconfig
+        chmod +x $DIY_P2_SH
+        $GITHUB_WORKSPACE/$DIY_P2_SH
 
-      - name: Compile the firmware
-        id: compile
-        run: |
-          cd openwrt
-          echo "Starting compilation for cmcc_rax3000m-usboffload"
-          make -j$(nproc) V=s 2> compile_error.log || {
-            echo "Compilation failed, see compile_error.log";
-            cat compile_error.log;
-            exit 1;
-          }
-          echo "status=success" >> $GITHUB_OUTPUT
-          echo "DEVICE_NAME=_cmcc_rax3000m-usboffload" >> $GITHUB_ENV
-          echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
-          ls -la bin/targets/*/*
+    - name: 应用 5G 25dB EEPROM 修改（可选）
+      if: env.ENABLE_5G_25DB == 'true'
+      run: |
+        cd openwrt
+        mkdir -p $(dirname $TARGET_EEPROM_PATH)
+        printf '\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B' > /tmp/tmp.bin && dd if=/tmp/tmp.bin of=$TARGET_EEPROM_PATH bs=1 seek=$((0x445)) conv=notrunc
+        echo "已应用 5G 25dB EEPROM 修改，偏移量 0x445"
 
-      - name: Upload debug logs
-        if: failure()
-        uses: actions/upload-artifact@main
-        with:
-          name: debug_logs_cmcc_rax3000m-usboffload
-          path: |
-            openwrt/.config
-            openwrt/compile_error.log
-            openwrt/config_dump.txt
+    - name: 下载软件包
+      id: package
+      run: |
+        cd openwrt
+        make download -j8
+        find dl -size -1024c -exec ls -l {} \;
+        find dl -size -1024c -exec rm -f {} \;
 
-      - name: Organize files
-        id: organize
-        if: steps.compile.outputs.status == 'success' && !cancelled()
-        run: |
-          cd openwrt/bin/targets/*/*
-          if [ -d . ]; then
-            rm -rf packages
-            echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-            echo "status=success" >> $GITHUB_OUTPUT
-          else
-            echo "Error: No firmware files found in bin/targets"
-            exit 1
-          fi
+    - name: 编译固件
+      id: compile
+      run: |
+        cd openwrt
+        echo -e "$(nproc) thread compile for ${{ matrix.device }}"
+        make -j$(nproc) || make -j1 || make -j1 V=s
+        echo "status=success" >> $GITHUB_OUTPUT
+        echo "DEVICE_NAME=_${{ matrix.device }}" >> $GITHUB_ENV
+        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
 
-      - name: Upload firmware
-        uses: actions/upload-artifact@main
-        if: steps.organize.outputs.status == 'success' && !cancelled()
-        with:
-          name: ImmortalWrt_cmcc_rax3000m-usboffload${{ env.FILE_DATE }}
-          path: ${{ env.FIRMWARE }}
+    - name: 检查磁盘空间使用情况
+      if: (!cancelled())
+      run: df -hT
+
+    - name: 上传 bin 目录
+      uses: actions/upload-artifact@v4
+      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
+      with:
+        name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        path: openwrt/bin
+
+    - name: 整理文件
+      id: organize
+      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+      run: |
+        cd openwrt/bin/targets/*/*
+        rm -rf packages
+        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+        echo "status=success" >> $GITHUB_OUTPUT
+
+    - name: 上传固件目录
+      uses: actions/upload-artifact@v4
+      if: steps.organize.outputs.status == 'success' && !cancelled()
+      with:
+        name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        path: ${{ env.FIRMWARE }}
+
+    - name: 生成发布标签
+      id: tag
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      run: |
+        echo "release_tag=$(date +"%Y.%m.%d-%H%M-immortalwrt-24.10-${{ matrix.device }}")" >> $GITHUB_OUTPUT
+        touch release.txt
+        echo "${{ matrix.device }}-24.10 高功率固件" >> release.txt
+        echo "后台：192.168.2.1" >> release.txt
+        echo "账号：root" >> release.txt
+        echo "密码：无" >> release.txt
+        echo "默认主题：Argon" >> release.txt
+        echo "集成插件：ksmb" >> release.txt
+        echo "编译源码：https://github.com/padavanonly/immortalwrt-mt798x-24.10" >> release.txt
+        echo "status=success" >> $GITHUB_OUTPUT
+
+    - name: 上传固件到 Release
+      uses: softprops/action-gh-release@v2
+      if: steps.tag.outputs.status == 'success' && !cancelled()
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ steps.tag.outputs.release_tag }}
+        body_path: release.txt
+        files: ${{ env.FIRMWARE }}/*
+
+    - name: 删除旧的工作流程运行记录
+      uses: Mattraks/delete-workflow-runs@v2
+      with:
+        retain_days: 0
+        keep_minimum_runs: 2
+
+    - name: 删除旧的 Releases
+      uses: dev-drprasad/delete-older-releases@v0.3.4
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      with:
+        keep_latest: 3
+        delete_tags: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
