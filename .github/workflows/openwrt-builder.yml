@@ -28,7 +28,7 @@ on:
           - xiaomi_mi-router-ax3000t-stock
           - xiaomi_mi-router-wr30u-112m
           - xiaomi_mi-router-wr30u-stock
-      enable_5g_25db:
+enable_5g_25db:
         description: '启用 5G WiFi 25dB 支持'
         required: false
         default: 'true'
@@ -142,6 +142,16 @@ jobs:
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P1_SH
 
+    - name: 修复 kmod-usb-gadget-ncm 依赖
+      run: |
+        cd openwrt
+        if ! grep -q "kmod-usb-gadget-ncm" feeds.conf.default; then
+          echo "添加 kmod-usb-gadget-ncm 到 Feeds..."
+          echo "src-git custom https://github.com/openwrt/openwrt.git^openwrt-23.05" >> feeds.conf.default
+          ./scripts/feeds update -a
+          ./scripts/feeds install kmod-usb-gadget-ncm
+        fi
+
     - name: 更新 Feeds
       run: cd openwrt && ./scripts/feeds update -a
 
@@ -158,8 +168,12 @@ jobs:
         echo "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_${{ matrix.device }}=y" >> .config
         echo "CONFIG_TARGET_DEVICE_PACKAGES_mediatek_mt7981_DEVICE_${{ matrix.device }}=\"\"" >> .config
         make defconfig
-        chmod +x $DIY_P2_SH
-        $GITHUB_WORKSPACE/$DIY_P2_SH
+        if [ -f $GITHUB_WORKSPACE/$DIY_P2_SH ]; then
+          chmod +x $GITHUB_WORKSPACE/$DIY_P2_SH
+          $GITHUB_WORKSPACE/$DIY_P2_SH
+        else
+          echo "警告：$DIY_P2_SH 文件不存在，跳过执行"
+        fi
 
     - name: 应用 5G 25dB EEPROM 修改（可选）
       if: env.ENABLE_5G_25DB == 'true'
@@ -173,7 +187,7 @@ jobs:
       id: package
       run: |
         cd openwrt
-        make  make download -j8
+        make download -j8
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
