@@ -1,7 +1,7 @@
 name: ImmortalWrt MT798x Builder
 
 on:
-  workflow_dispatch:  # 仅手动触发，便于调试
+  workflow_dispatch:
 
 env:
   REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-24.10
@@ -26,7 +26,25 @@ jobs:
           - cmcc_rax3000m-usboffload
     steps:
       - name: Checkout
-        uses: actions/checkout@main
+        uses: actions/checkout@v4
+
+      - name: Cache OpenWRT downloads
+        uses: actions/cache@v4
+        with:
+          path: openwrt/dl
+          key: openwrt-dl-${{ hashFiles('openwrt/feeds.conf.default') }}-${{ env.REPO_BRANCH }}
+          restore-keys: |
+            openwrt-dl-${{ hashFiles('openwrt/feeds.conf.default') }}-
+            openwrt-dl-
+
+      - name: Cache OpenWRT toolchain
+        uses: actions/cache@v4
+        with:
+          path: openwrt/staging_dir/toolchain-*
+          key: openwrt-toolchain-${{ hashFiles('openwrt/.config') }}-${{ matrix.device }}
+          restore-keys: |
+            openwrt-toolchain-${{ hashFiles('openwrt/.config') }}-
+            openwrt-toolchain-
 
       - name: Initialization environment
         env:
@@ -101,16 +119,30 @@ jobs:
           make download -j8 || { echo "Error: make download failed"; exit 1; }
           find dl -size -1024c -exec rm -f {} \;
 
-      - name: Compile the firmware
+      - name: Clean before build
+        run: |
+          cd openwrt
+          make clean || { echo "Error: make clean failed"; exit 1; }
+
+      - name: Compile the firmware with retry
         id: compile
+        timeout-minutes: 60
+        continue-on-error: true
         run: |
           cd openwrt
           echo "Starting compilation for ${{ matrix.device }}"
-          make -j$(nproc) V=s 2> compile_error.log || {
-            echo "Compilation failed, see compile_error.log";
-            cat compile_error.log;
-            exit 1;
-          }
+          for attempt in 1 2 3; do
+            make -j$(nproc) V=s 2> compile_error.log && break || {
+              if [ $attempt -lt 3 ]; then
+                echo "Attempt $attempt failed, retrying in 5 seconds..."
+                sleep 5
+              else
+                echo "Compilation failed after 3 attempts, see compile_error.log";
+                cat compile_error.log;
+                exit 1;
+              fi
+            }
+          done
           echo "status=success" >> $GITHUB_OUTPUT
           echo "DEVICE_NAME=_${{ matrix.device }}" >> $GITHUB_ENV
           echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
