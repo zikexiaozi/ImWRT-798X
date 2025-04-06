@@ -11,8 +11,8 @@ on:
         default: false
 
 permissions:
-  contents: write
-  actions: write
+  contents: write  # 允许创建 Release 和上传文件
+  actions: write   # 允许删除工作流运行记录和旧 Releases
 
 env:
   REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-24.10
@@ -82,7 +82,7 @@ jobs:
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
 
-- name: 下载软件包
+    - name: 下载软件包
       id: package
       run: |
         cd openwrt
@@ -97,6 +97,7 @@ jobs:
       run: |
         mkdir -p package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom
         printf '\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B' | dd of=package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom/MT7981_iPAiLNA_EEPROM.bin bs=1 seek=$((0x445)) conv=notrunc
+
     - name: 编译固件
       id: compile
       run: |
