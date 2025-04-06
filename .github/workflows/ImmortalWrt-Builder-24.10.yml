@@ -1,11 +1,11 @@
 name: ImmortalWrt-Builder-24.10
 
 on:
-  repository_dispatch:
-  workflow_dispatch:
+  repository_dispatch:  # 保留外部触发
+  workflow_dispatch:    # 保留手动选择设备型号触发
     inputs:
       device_model:
-        description: 'Select target device model'
+        description: '选择目标设备型号'
         type: choice
         required: true
         options:
@@ -29,17 +29,15 @@ on:
           - xiaomi_mi-router-wr30u-112m
           - xiaomi_mi-router-wr30u-stock
       enable_5g_25db:
-        description: 'Enable 5G 25dB modification'
+        description: '启用 5G 25dB 修改'
         type: boolean
         required: true
         default: true
       upload_bin_dir:
-        description: 'Upload bin directory'
+        description: '上传 bin 目录'
         type: boolean
         required: false
         default: false
-  schedule:
-    - cron: '0 21 * * *' # UTC 21:00 = Asia/Shanghai 05:00
 
 permissions:
   contents: write
@@ -60,17 +58,63 @@ env:
   WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
 
 jobs:
-  build:
+  check-source-updates:
     runs-on: ubuntu-22.04
-    name: Build ${{ matrix.device_model }}
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+    steps:
+      - name: 检出本仓库代码
+        uses: actions/checkout@v4
+
+      - name: 安装 GitHub CLI
+        run: |
+          sudo apt-get install -y gh
+
+      - name: 检查源仓库更新
+        id: check
+        run: |
+          # 获取源仓库最新提交的 SHA
+          LATEST_SHA=$(curl -s -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/padavanonly/immortalwrt-mt798x-24.10/commits/$REPO_BRANCH" | jq -r '.sha')
+          
+          # 检查上一次记录的 SHA
+          LAST_CHECKED_FILE="last_checked_sha.txt"
+          if [ -f "$LAST_CHECKED_FILE" ]; then
+            LAST_CHECKED_SHA=$(cat "$LAST_CHECKED_FILE")
+          else
+            LAST_CHECKED_SHA=""
+          fi
+
+          # 比较 SHA，决定是否需要编译
+          if [ "$LATEST_SHA" != "$LAST_CHECKED_SHA" ]; then
+            echo "检测到源仓库有新更新。最新 SHA: $LATEST_SHA，上次检查: $LAST_CHECKED_SHA"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "$LATEST_SHA" > "$LAST_CHECKED_FILE"
+          else
+            echo "源仓库无更新，跳过编译。"
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 上传上次检查的 SHA
+        if: steps.check.outputs.should_build == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: last-checked-sha
+          path: last_checked_sha.txt
+
+  build:
+    needs: check-source-updates  # 依赖检查更新任务
+    if: github.event_name == 'workflow_dispatch' || (needs.check-source-updates.outputs.should_build == 'true' && github.event_name != 'workflow_dispatch')
+    runs-on: ubuntu-22.04
+    name: 编译 ${{ matrix.device_model }}
     strategy:
       matrix:
-        device_model: ${{ github.event_name == 'schedule' && fromJSON('["cmcc_rax3000m-usboffload", "cmcc_rax3000m-emmc-usboffload"]') || fromJSON(format('["{0}"]', github.event.inputs.device_model)) }}
+        device_model: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', github.event.inputs.device_model)) || fromJSON('["cmcc_rax3000m-usboffload", "cmcc_rax3000m-emmc-usboffload"]') }}
     steps:
       - name: 调试信息
         run: |
-          echo "Trigger: ${{ github.event_name }}"
-          echo "Device Model: ${{ matrix.device_model }}"
+          echo "触发方式: ${{ github.event_name }}"
+          echo "设备型号: ${{ matrix.device_model }}"
 
       - name: 检出代码
         uses: actions/checkout@v4
@@ -128,7 +172,7 @@ jobs:
           cd openwrt
           $GITHUB_WORKSPACE/$DIY_P2_SH
 
-      - name: 下载包
+      - name: 下载软件包
         id: package
         run: |
           cd openwrt
@@ -138,7 +182,7 @@ jobs:
           find dl -size -1024c -exec rm -f {} \;
 
       - name: 修改 5G 25dB
-        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.enable_5g_25db == 'true')
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true'
         working-directory: ./openwrt
         run: |
           mkdir -p package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom
@@ -176,7 +220,7 @@ jobs:
 
       - name: 上传 bin
         uses: actions/upload-artifact@v4
-        if: steps.compile.outputs.status == 'success' && (github.event_name == 'workflow_dispatch' && github.event.inputs.upload_bin_dir == 'true')
+        if: steps.compile.outputs.status == 'success' && github.event_name == 'workflow_dispatch' && github.event.inputs.upload_bin_dir == 'true'
         with:
           name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
           path: openwrt/bin
@@ -191,7 +235,7 @@ jobs:
           for file in *sysupgrade.bin *factory.bin; do
             if [ -f "$file" ]; then
               TYPE=$(echo "$file" | grep -o "sysupgrade\|factory")
-              NEW_NAME="${{ matrix.device_model }}_25dB-${{ (github.event_name == 'schedule' || github.event.inputs.enable_5g_25db == 'true') && 'on' || 'off' }}_${TYPE}.bin"
+              NEW_NAME="${{ matrix.device_model }}_25dB-${{ (github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true') && 'on' || 'off' }}_${TYPE}.bin"
               mv "$file" "$NEW_NAME"
             fi
           done
@@ -207,7 +251,7 @@ jobs:
           mkdir -p temp
           find . -type f \( -name "*sysupgrade.bin" -o -name "*factory.bin" \) -exec cp {} temp/ \;
           cd temp
-          ZIP_NAME="${{ matrix.device_model }}${{ env.FILE_DATE }}_25dB-${{ (github.event_name == 'schedule' || github.event.inputs.enable_5g_25db == 'true') && 'on' || 'off' }}.zip"
+          ZIP_NAME="${{ matrix.device_model }}${{ env.FILE_DATE }}_25dB-${{ (github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true') && 'on' || 'off' }}.zip"
           zip -r "$ZIP_NAME" .
           echo "ZIP_PATH=$PWD/$ZIP_NAME" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
@@ -224,7 +268,7 @@ jobs:
           **固件版本**: ImmortalWrt ${{ env.FIRMWARE_VERSION }}  
           **设备**: ${{ matrix.device_model }}  
           **编译时间**: $(date +"%Y-%m-%d %H:%M %Z")  
-          **高功率模式**: ${{ (github.event_name == 'schedule' || github.event.inputs.enable_5g_25db == 'true') && '已启用' || '未启用' }}  
+          **高功率模式**: ${{ (github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true') && '已启用' || '未启用' }}  
 
           ### 下载
           - 固件文件已附在此发布下方  
@@ -257,19 +301,15 @@ jobs:
         run: |
           set -e
           echo "开始上传到 WebDAV: ${{ env.ZIP_PATH }} -> ${{ env.WEBDAV_URL }}/${{ env.ZIP_NAME }}"
-          
-          # 设置重试次数和间隔
           MAX_RETRIES=3
           RETRY_DELAY=10
           ATTEMPT=1
-          
           while [ $ATTEMPT -le $MAX_RETRIES ]; do
             echo "尝试第 $ATTEMPT 次上传..."
             STATUS=$(curl -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
                           -T "${{ env.ZIP_PATH }}" \
                           "${{ env.WEBDAV_URL }}/${{ env.ZIP_NAME }}" \
                           -w "%{http_code}" -o /dev/null -s)
-            
             if [ "$STATUS" -eq 201 ] || [ "$STATUS" -eq 204 ]; then
               echo "上传成功，状态码: $STATUS"
               curl -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
@@ -279,7 +319,6 @@ jobs:
               echo "上传失败，状态码: $STATUS"
               if [ $ATTEMPT -eq $MAX_RETRIES ]; then
                 echo "错误：经过 $MAX_RETRIES 次尝试后仍无法上传到 WebDAV"
-                echo "请检查 WEBDAV_URL、WEBDAV_USERNAME 和 WEBDAV_PASSWORD 是否正确配置"
                 exit 1
               fi
               sleep $RETRY_DELAY
