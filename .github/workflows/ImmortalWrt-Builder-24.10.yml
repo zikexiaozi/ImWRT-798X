@@ -67,7 +67,190 @@ jobs:
       matrix:
         device_model: ${{ github.event_name == 'schedule' && fromJSON('["cmcc_rax3000m-usboffload", "cmcc_rax3000m-emmc-usboffload"]') || fromJSON(format('["{0}"]', github.event.inputs.device_model)) }}
     steps:
-      # ... 其他步骤保持不变，直到“上传到 WebDAV”之前 ...
+      - name: 调试信息
+        run: |
+          echo "Trigger: ${{ github.event_name }}"
+          echo "Device Model: ${{ matrix.device_model }}"
+
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 初始化环境
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+            bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib \
+            git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev \
+            libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev \
+            libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 \
+            python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo \
+            uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev zip
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean
+          sudo timedatectl set-timezone "$TZ"
+          sudo mkdir -p /workdir
+          sudo chown $USER:$GROUPS /workdir
+
+      - name: 安装 GitHub CLI
+        run: |
+          sudo apt-get install -y gh
+
+      - name: 克隆源码
+        working-directory: /workdir
+        run: |
+          df -hT $PWD
+          git clone $REPO_URL -b $REPO_BRANCH openwrt
+          ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+
+      - name: 加载 Feeds
+        run: |
+          [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
+          chmod +x $DIY_P1_SH
+          cd openwrt
+          $GITHUB_WORKSPACE/$DIY_P1_SH
+
+      - name: 更新 Feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: 加载配置
+        run: |
+          [ -e files ] && mv files openwrt/files
+          [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+          echo "CONFIG_TARGET_mediatek_mt7981_DEVICE_${{ matrix.device_model }}=y" >> openwrt/.config
+          chmod +x $DIY_P2_SH
+          cd openwrt
+          $GITHUB_WORKSPACE/$DIY_P2_SH
+
+      - name: 下载包
+        id: package
+        run: |
+          cd openwrt
+          make defconfig
+          make download -j8
+          find dl -size -1024c -exec ls -l {} \;
+          find dl -size -1024c -exec rm -f {} \;
+
+      - name: 修改 5G 25dB
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.enable_5g_25db == 'true')
+        working-directory: ./openwrt
+        run: |
+          mkdir -p package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom
+          printf '\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B' | dd of=package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom/MT7981_iPAiLNA_EEPROM.bin bs=1 seek=$((0x445)) conv=notrunc
+
+      - name: 编译固件
+        id: compile
+        timeout-minutes: 120
+        run: |
+          set -e
+          cd openwrt
+          echo -e "$(nproc) thread compile"
+          make -j$(nproc) || make -j1 || { make -j1 V=s && exit 1; }
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "DEVICE_NAME=_${{ matrix.device_model }}" >> $GITHUB_ENV
+          echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+
+      - name: 提取固件版本号
+        id: version
+        if: steps.compile.outputs.status == 'success'
+        run: |
+          cd openwrt
+          if [ -f "version" ]; then
+            VERSION=$(cat version)
+          else
+            VERSION="24.10-SNAPSHOT r$(git rev-list --count HEAD)-$(git rev-parse --short HEAD)"
+          fi
+          echo "FIRMWARE_VERSION=$VERSION" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: 检查磁盘
+        if: always()
+        run: |
+          df -hT
+
+      - name: 上传 bin
+        uses: actions/upload-artifact@v4
+        if: steps.compile.outputs.status == 'success' && (github.event_name == 'workflow_dispatch' && github.event.inputs.upload_bin_dir == 'true')
+        with:
+          name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+          path: openwrt/bin
+
+      - name: 整理固件并固定文件名
+        id: organize
+        if: env.UPLOAD_FIRMWARE == 'true' && steps.compile.outputs.status == 'success'
+        run: |
+          set -e
+          cd openwrt/bin/targets/*/*
+          rm -rf packages
+          for file in *sysupgrade.bin *factory.bin; do
+            if [ -f "$file" ]; then
+              TYPE=$(echo "$file" | grep -o "sysupgrade\|factory")
+              NEW_NAME="${{ matrix.device_model }}_25dB-${{ (github.event_name == 'schedule' || github.event.inputs.enable_5g_25db == 'true') && 'on' || 'off' }}_${TYPE}.bin"
+              mv "$file" "$NEW_NAME"
+            fi
+          done
+          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: 筛选并压缩固件
+        id: compress
+        if: steps.compile.outputs.status == 'success'
+        run: |
+          set -e
+          cd ${{ env.FIRMWARE }}
+          mkdir -p temp
+          find . -type f \( -name "*sysupgrade.bin" -o -name "*factory.bin" \) -exec cp {} temp/ \;
+          cd temp
+          ZIP_NAME="${{ matrix.device_model }}${{ env.FILE_DATE }}_25dB-${{ (github.event_name == 'schedule' || github.event.inputs.enable_5g_25db == 'true') && 'on' || 'off' }}.zip"
+          zip -r "$ZIP_NAME" .
+          echo "ZIP_PATH=$PWD/$ZIP_NAME" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: 生成标签和发布描述
+        id: tag
+        if: env.UPLOAD_RELEASE == 'true' && steps.compile.outputs.status == 'success'
+        run: |
+          set -e
+          echo "RELEASE_TAG=v24.10-${{ matrix.device_model }}" >> $GITHUB_OUTPUT
+          cat << EOF > release.txt
+          # ImmortalWrt 24.10 - ${{ matrix.device_model }}
+
+          **固件版本**: ImmortalWrt ${{ env.FIRMWARE_VERSION }}  
+          **设备**: ${{ matrix.device_model }}  
+          **编译时间**: $(date +"%Y-%m-%d %H:%M %Z")  
+          **高功率模式**: ${{ (github.event_name == 'schedule' || github.event.inputs.enable_5g_25db == 'true') && '已启用' || '未启用' }}  
+
+          ### 下载
+          - 固件文件已附在此发布下方  
+          - 源码: [immortalwrt-mt798x-24.10](https://github.com/padavanonly/immortalwrt-mt798x-24.10)
+
+          ### 使用方法
+          1. 确认设备型号匹配  
+          2. 备份原始固件  
+          3. 通过 Web 或 SSH 刷入
+
+          > **注意**: 使用不当可能损坏设备，请谨慎操作！
+          EOF
+          echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: 发布固件
+        uses: softprops/action-gh-release@v2
+        if: steps.tag.outputs.status == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.tag.outputs.RELEASE_TAG }}
+          body_path: release.txt
+          files: |
+            ${{ env.FIRMWARE }}/*sysupgrade.bin
+            ${{ env.FIRMWARE }}/*factory.bin
+          overwrite: true
 
       - name: 上传到 WebDAV
         if: steps.compress.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
@@ -82,7 +265,6 @@ jobs:
           
           while [ $ATTEMPT -le $MAX_RETRIES ]; do
             echo "尝试第 $ATTEMPT 次上传..."
-            # 执行上传并捕获状态码
             STATUS=$(curl -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
                           -T "${{ env.ZIP_PATH }}" \
                           "${{ env.WEBDAV_URL }}/${{ env.ZIP_NAME }}" \
@@ -90,7 +272,6 @@ jobs:
             
             if [ "$STATUS" -eq 201 ] || [ "$STATUS" -eq 204 ]; then
               echo "上传成功，状态码: $STATUS"
-              # 验证上传结果
               curl -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
                    -I "${{ env.WEBDAV_URL }}/${{ env.ZIP_NAME }}" -s | grep "HTTP/1.1 200" && echo "文件验证成功" || echo "警告：文件可能未正确上传"
               break
