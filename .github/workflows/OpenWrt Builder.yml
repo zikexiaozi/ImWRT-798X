@@ -149,24 +149,24 @@ jobs:
           set -e
           echo "release_tag=v24.10-$(date +"%Y%m%d-%H%M")-cmcc_rax3000m" >> $GITHUB_OUTPUT
           cat << 'EOF' > release.txt
-# CMCC RAX3000M NAND 高功率固件 (ImmortalWrt 24.10)
-编译时间: $(date +"%Y-%m-%d %H:%M %Z")
-源码: [immortalwrt-mt798x-24.10](https://github.com/padavanonly/immortalwrt-mt798x-24.10)
+          # CMCC RAX3000M NAND 高功率固件 (ImmortalWrt 24.10)
+          编译时间: $(date +"%Y-%m-%d %H:%M %Z")
+          源码: [immortalwrt-mt798x-24.10](https://github.com/padavanonly/immortalwrt-mt798x-24.10)
 
-## 默认配置
-- **管理地址**: 192.168.2.1
-- **用户名**: root
-- **密码**: 无 (请首次登录后设置)
-- **主题**: Argon
+          ## 默认配置
+          - **管理地址**: 192.168.2.1
+          - **用户名**: root
+          - **密码**: 无 (请首次登录后设置)
+          - **主题**: Argon
 
-## 特性
-- **集成插件**: ksmb
-- **支持**: 高功率模式
+          ## 特性
+          - **集成插件**: ksmb
+          - **支持**: 高功率模式
 
-## 注意事项
-- 请确保设备型号匹配 (CMCC RAX3000M NAND)。
-- 建议备份原始固件以便恢复。
-EOF
+          ## 注意事项
+          - 请确保设备型号匹配 (CMCC RAX3000M NAND)。
+          - 建议备份原始固件以便恢复。
+          EOF
           echo "status=success" >> $GITHUB_OUTPUT
 
       - name: 发布固件
