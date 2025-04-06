@@ -84,13 +84,13 @@ jobs:
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
  
-     - name: 应用 5G 25dB 修改（可选）
+      - name: 应用 5G 25dB 修改（可选）
       if: github.event.inputs.enable_5g_25db == 'true'
       working-directory: ./openwrt
       run: |
         mkdir -p package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom
         printf '\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B' | dd of=package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom/MT7981_iPAiLNA_EEPROM.bin bs=1 seek=$((0x445)) conv=notrunc
-        
+
 
     - name: 编译固件
       id: compile
