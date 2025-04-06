@@ -5,36 +5,36 @@ on:
   workflow_dispatch:
     inputs:
       device_model:
-        description: '选择目标设备型号'
+        description: 'Select target device model'
         type: choice
         required: true
         options:
-          - cmcc_rax3000m (中国移动 RAX3000M)
-          - cmcc_rax3000m-emmc (中国移动 RAX3000M eMMC版)
-          - cmcc_rax3000m-usboffload (中国移动 RAX3000M USB卸载版)
-          - cmcc_rax3000m-emmc-usboffload (中国移动 RAX3000M eMMC USB卸载版)
-          - abt_asr3000 (ABT ASR3000)
-          - cetron_ct3003 (赛创 CT3003)
-          - cmcc_a10 (中国移动 A10)
-          - h3c_nx30pro (H3C NX30 Pro)
-          - imou_lc-hx3001 (IMOU LC-HX3001)
-          - jcg_q30 (JCG Q30)
-          - konka_komi-a31 (康佳 KOMI-A31)
-          - livinet_zr-3020 (Livinet ZR-3020)
-          - mt7981-360-t7-108M (MT7981 360 T7 108M)
-          - mt7981-clt-r30b1 (MT7981 CLT R30B1)
-          - mt7981-clt-r30b1-112M (MT7981 CLT R30B1 112M)
-          - xiaomi_mi-router-ax3000t (小米路由器 AX3000T)
-          - xiaomi_mi-router-ax3000t-stock (小米路由器 AX3000T 原厂版)
-          - xiaomi_mi-router-wr30u-112m (小米路由器 WR30U 112M)
-          - xiaomi_mi-router-wr30u-stock (小米路由器 WR30U 原厂版)
+          - cmcc_rax3000m
+          - cmcc_rax3000m-emmc
+          - cmcc_rax3000m-usboffload
+          - cmcc_rax3000m-emmc-usboffload
+          - abt_asr3000
+          - cetron_ct3003
+          - cmcc_a10
+          - h3c_nx30pro
+          - imou_lc-hx3001
+          - jcg_q30
+          - konka_komi-a31
+          - livinet_zr-3020
+          - mt7981-360-t7-108M
+          - mt7981-clt-r30b1
+          - mt7981-clt-r30b1-112M
+          - xiaomi_mi-router-ax3000t
+          - xiaomi_mi-router-ax3000t-stock
+          - xiaomi_mi-router-wr30u-112m
+          - xiaomi_mi-router-wr30u-stock
       enable_5g_25db:
-        description: '启用 5G 25dB 高功率模式'
+        description: 'Enable 5G 25dB modification'
         type: boolean
         required: true
         default: true
       upload_bin_dir:
-        description: '上传 bin 目录'
+        description: 'Upload bin directory'
         type: boolean
         required: false
         default: false
@@ -75,7 +75,7 @@ jobs:
           git clone ${{ env.REPO_URL }} -b ${{ env.REPO_BRANCH }} openwrt
           cd openwrt
           CURRENT_HASH=$(git rev-parse HEAD)
-          echo "当前提交哈希: $CURRENT_HASH"
+          echo "Current commit hash: $CURRENT_HASH"
           echo "CURRENT_HASH=$CURRENT_HASH" >> $GITHUB_ENV
 
       - name: 获取上一次编译的哈希
@@ -90,16 +90,16 @@ jobs:
         run: |
           if [ -f last_build_hash.txt ]; then
             LAST_HASH=$(cat last_build_hash.txt)
-            echo "上次编译哈希: $LAST_HASH"
+            echo "Last build hash: $LAST_HASH"
             if [ "$LAST_HASH" != "${{ env.CURRENT_HASH }}" ]; then
-              echo "源码已更新，触发编译。"
+              echo "Source updated, triggering build."
               echo "should_build=true" >> $GITHUB_OUTPUT
             else
-              echo "源码未更新，跳过编译。"
+              echo "No source update, skipping build."
               echo "should_build=false" >> $GITHUB_OUTPUT
             fi
           else
-            echo "未找到上次编译哈希，触发编译。"
+            echo "No previous hash found, triggering build."
             echo "should_build=true" >> $GITHUB_OUTPUT
           fi
           echo "${{ env.CURRENT_HASH }}" > last_build_hash.txt
@@ -107,15 +107,15 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && needs.check-source.outputs.should_build == 'true')
-    name: 编译 ${{ matrix.device_model }}
+    name: Build ${{ matrix.device_model }}
     strategy:
       matrix:
         device_model: ${{ github.event_name == 'schedule' && fromJSON('["cmcc_rax3000m-usboffload", "cmcc_rax3000m-emmc-usboffload"]') || fromJSON(format('["{0}"]', github.event.inputs.device_model)) }}
     steps:
       - name: 调试信息
         run: |
-          echo "触发方式: ${{ github.event_name }}"
-          echo "设备型号: ${{ matrix.device_model }}"
+          echo "Trigger: ${{ github.event_name }}"
+          echo "Device Model: ${{ matrix.device_model }}"
 
       - name: 检出代码
         uses: actions/checkout@v4
@@ -214,7 +214,7 @@ jobs:
         run: |
           set -e
           cd openwrt
-          echo -e "$(nproc) 线程使用 ccache 编译"
+          echo -e "$(nproc) thread compile with ccache"
           make -j$(nproc) CCACHE=ccache || make -j1 CCACHE=ccache || { make -j1 V=s CCACHE=ccache && exit 1; }
           echo "status=success" >> $GITHUB_OUTPUT
           echo "DEVICE_NAME=_${{ matrix.device_model }}" >> $GITHUB_ENV
@@ -230,7 +230,7 @@ jobs:
         run: |
           df -hT
 
-      - name: 上传 bin 目录
+      - name: 上传 bin
         uses: actions/upload-artifact@v4
         if: steps.compile.outputs.status == 'success' && (github.event_name == 'workflow_dispatch' && github.event.inputs.upload_bin_dir == 'true')
         with:
