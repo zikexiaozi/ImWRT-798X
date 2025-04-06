@@ -32,7 +32,7 @@ on:
         description: 'Enable 5G 25dB modification'
         type: boolean
         required: true
-        default: true  # 默认启用 25dB
+        default: true
       upload_bin_dir:
         description: 'Upload bin directory'
         type: boolean
@@ -215,7 +215,7 @@ jobs:
           set -e
           cd openwrt
           echo -e "$(nproc) thread compile with ccache"
-          make -j$(nproc) CCACHE=ccache ||KILLmake -j1 CCACHE=ccache || { make -j1 V=s CCACHE=ccache && exit 1; }
+          make -j$(nproc) CCACHE=ccache || make -j1 CCACHE=ccache || { make -j1 V=s CCACHE=ccache && exit 1; }
           echo "status=success" >> $GITHUB_OUTPUT
           echo "DEVICE_NAME=_${{ matrix.device_model || github.event.inputs.device_model }}" >> $GITHUB_ENV
           echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
@@ -231,18 +231,25 @@ jobs:
 
       - name: 上传 bin
         uses: actions/upload-artifact@v4
-        if: steps.compile.outputs.status == 'success资助者success' && (github.event_name == 'workflow_dispatch' && github.event.inputs.upload_bin_dir == 'true')
+        if: steps.compile.outputs.status == 'success' && (github.event_name == 'workflow_dispatch' && github.event.inputs.upload_bin_dir == 'true')
         with:
           name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
           path: openwrt/bin
 
-      - name: 整理固件
+      - name: 整理固件并简化文件名
         id: organize
         if: env.UPLOAD_FIRMWARE == 'true' && steps.compile.outputs.status == 'success'
         run: |
           set -e
           cd openwrt/bin/targets/*/*
           rm -rf packages
+          for file in *sysupgrade.bin *factory.bin; do
+            if [ -f "$file" ]; then
+              TYPE=$(echo "$file" | grep -o "sysupgrade\|factory")
+              NEW_NAME="${{ matrix.device_model || github.event.inputs.device_model }}_$(date +"%Y%m%d%H%M")_25dB-${{ (github.event_name == 'schedule' || github.event.inputs.enable_5g_25db == 'true') && 'on' || 'off' }}_${TYPE}.bin"
+              mv "$file" "$NEW_NAME"
+            fi
+          done
           echo "FIRMWARE=$PWD" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
 
@@ -278,35 +285,25 @@ jobs:
         if: env.UPLOAD_RELEASE == 'true' && steps.compile.outputs.status == 'success'
         run: |
           set -e
-          echo "release_tag=v24.10-$(date +"%Y%m%d-%H%M")-${{ matrix.device_model || github.event.inputs.device_model }}" >> $GITHUB_OUTPUT
-          cat << 'EOF' > release.txt
-          # ImmortalWrt 24.10 固件 - ${{ matrix.device_model || github.event.inputs.device_model }}
+          echo "release_tag=v24.10-${{ matrix.device_model || github.event.inputs.device_model }}" >> $GITHUB_OUTPUT
+          cat << EOF > release.txt
+          # ImmortalWrt 24.10 - ${{ matrix.device_model || github.event.inputs.device_model }}
 
-          ## 固件信息
-          - **设备型号**: ${{ matrix.device_model || github.event.inputs.device_model }}
-          - **固件版本**: ImmortalWrt 24.10
-          - **编译时间**: $(date +"%Y-%m-%d %H:%M %Z")
-          - **源码地址**: [immortalwrt-mt798x-24.10](https://github.com/padavanonly/immortalwrt-mt798x-24.10)
+          **版本**: 24.10  
+          **设备**: ${{ matrix.device_model || github.event.inputs.device_model }}  
+          **编译时间**: $(date +"%Y-%m-%d %H:%M %Z")  
+          **高功率模式**: ${{ (github.event_name == 'schedule' || github.event.inputs.enable_5g_25db == 'true') && '已启用' || '未启用' }}  
 
-          ## 默认配置
-          - **管理地址**: `192.168.2.1`
-          - **用户名**: `root`
-          - **密码**: 无 (首次登录后请设置)
-          - **主题**: Argon
+          ### 下载
+          - 固件文件已附在此发布下方  
+          - 源码: [immortalwrt-mt798x-24.10](https://github.com/padavanonly/immortalwrt-mt798x-24.10)
 
-          ## 功能特性
-          - **集成插件**: ksmbd
-          - **高功率模式**: ${{ (github.event_name == 'schedule' || github.event.inputs.enable_5g_25db == 'true') && '已启用' || '未启用' }}
-          - **编译环境**: Ubuntu 22.04, 多线程优化，带 ccache 加速
+          ### 使用方法
+          1. 确认设备型号匹配  
+          2. 备份原始固件  
+          3. 通过 Web 或 SSH 刷入
 
-          ## 使用说明
-          1. 确保设备型号与固件匹配：${{ matrix.device_model || github.event.inputs.device_model }}。
-          2. 刷机前建议备份原始固件。
-          3. 通过 Web 界面或 SSH 进行固件升级。
-
-          ## 注意事项
-          - 请勿在不兼容的设备上刷入此固件，以免造成设备损坏。
-          - 如需支持，请参考源码仓库的 Issues 页面。
+          > **注意**: 使用不当可能损坏设备，请谨慎操作！
           EOF
           echo "status=success" >> $GITHUB_OUTPUT
 
@@ -319,6 +316,7 @@ jobs:
           tag_name: ${{ steps.tag.outputs.release_tag }}
           body_path: release.txt
           files: ${{ env.FIRMWARE }}/*
+          overwrite: true
 
       - name: 删除旧运行
         if: steps.tag.outputs.status == 'success'
@@ -326,12 +324,3 @@ jobs:
         with:
           retain_days: 0
           keep_minimum_runs: 2
-
-      - name: 删除旧发布
-        if: steps.tag.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true'
-        uses: dev-drprasad/delete-older-releases@v0.3.4
-        with:
-          keep_latest: 3
-          delete_tags: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
