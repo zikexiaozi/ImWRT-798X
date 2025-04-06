@@ -27,7 +27,10 @@ on:
           - xiaomi_mi-router-ax3000t
           - xiaomi_mi-router-ax3000t-stock
           - xiaomi_mi-router-wr30u-112m
-          - xiaomi_mi-router-wrDOF:
+          - xiaomi_mi-router-wr30u-stock
+      enable_5g_25db:
+        description: 'Enable 5G 25dB modification'
+        type: boolean
         required: true
         default: true
       upload_bin_dir:
