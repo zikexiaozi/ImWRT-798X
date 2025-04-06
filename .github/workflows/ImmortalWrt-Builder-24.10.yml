@@ -105,18 +105,18 @@ jobs:
           echo "${{ env.CURRENT_HASH }}" > last_build_hash.txt
 
   build:
-    needs: check-source
+    runs-on: ubuntu-22.04
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'schedule' && needs.check-source.outputs.should_build == 'true')
     name: Build ${{ matrix.device_model || github.event.inputs.device_model }}
-    runs-on: ubuntu-22.04
     strategy:
       matrix:
-        device_model:
-          - cmcc_rax3000m-usboffload
-          - cmcc_rax3000m-emmc-usboffload
-        exclude:
-          - device_model: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.device_model || '' }}
+        device_model: ${{ github.event_name == 'schedule' && fromJSON('["cmcc_rax3000m-usboffload", "cmcc_rax3000m-emmc-usboffload"]') || fromJSON('[]') }}
     steps:
+      - name: 调试信息
+        run: |
+          echo "Trigger: ${{ github.event_name }}"
+          echo "Device Model: ${{ matrix.device_model || github.event.inputs.device_model }}"
+
       - name: 检出代码
         uses: actions/checkout@v4
 
