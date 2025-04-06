@@ -153,6 +153,37 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Ensure full history is checked out to include all files
+
+      - name: Verify script files
+        run: |
+          echo "Checking for script files in $GITHUB_WORKSPACE..."
+          ls -la $GITHUB_WORKSPACE/scripts || echo "Scripts directory not found!"
+          if [ -f "$GITHUB_WORKSPACE/$DIY_P1_SH" ]; then
+            echo "Found $DIY_P1_SH"
+          else
+            echo "Error: $DIY_P1_SH not found! Creating a default script..."
+            mkdir -p $GITHUB_WORKSPACE/scripts
+            cat << 'EOF' > $GITHUB_WORKSPACE/$DIY_P1_SH
+            #!/bin/bash
+            echo "Running default diy-part1.sh script..."
+            # Add custom commands here if needed
+            EOF
+            chmod +x $GITHUB_WORKSPACE/$DIY_P1_SH
+          fi
+          if [ -f "$GITHUB_WORKSPACE/$DIY_P2_SH" ]; then
+            echo "Found $DIY_P2_SH"
+          else
+            echo "Error: $DIY_P2_SH not found! Creating a default script..."
+            mkdir -p $GITHUB_WORKSPACE/scripts
+            cat << 'EOF' > $GITHUB_WORKSPACE/$DIY_P2_SH
+            #!/bin/bash
+            echo "Running default diy-part2.sh script..."
+            # Add custom commands here if needed
+            EOF
+            chmod +x $GITHUB_WORKSPACE/$DIY_P2_SH
+          fi
 
       - name: Download previous hash file (for scheduled runs)
         if: github.event_name == 'schedule'
@@ -208,8 +239,12 @@ jobs:
           if [ ! -f "feeds.conf.default" ] && [ "${{ github.event.inputs.start_from_compile }}" != "true" ]; then
             echo "Loading feeds..."
             [ -e $FEEDS_CONF ] && mv $FEEDS_CONF feeds.conf.default
-            chmod +x $DIY_P1_SH
-            $GITHUB_WORKSPACE/$DIY_P1_SH
+            if [ -f "$GITHUB_WORKSPACE/$DIY_P1_SH" ]; then
+              chmod +x $GITHUB_WORKSPACE/$DIY_P1_SH
+              $GITHUB_WORKSPACE/$DIY_P1_SH
+            else
+              echo "Warning: $DIY_P1_SH not found, skipping diy-part1.sh execution."
+            fi
             ./scripts/feeds update -a
             ./scripts/feeds install -a
           else
@@ -222,8 +257,12 @@ jobs:
             [ -e files ] && mv files openwrt/files
             [ -e $CONFIG_FILE ] && mv $CONFIG_FILE .config
             echo "CONFIG_TARGET_mediatek_mt7981_DEVICE_${{ matrix.device_model }}=y" >> .config
-            chmod +x $DIY_P2_SH
-            $GITHUB_WORKSPACE/$DIY_P2_SH
+            if [ -f "$GITHUB_WORKSPACE/$DIY_P2_SH" ]; then
+              chmod +x $GITHUB_WORKSPACE/$DIY_P2_SH
+              $GITHUB_WORKSPACE/$DIY_P2_SH
+            else
+              echo "Warning: $DIY_P2_SH not found, skipping diy-part2.sh execution."
+            fi
             make defconfig
           else
             echo "Configuration file .config already exists or starting from compile, skipping configuration."
