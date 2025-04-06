@@ -1,4 +1,4 @@
-name: ImmortalWrt-Builder-24.10
+name: ttest
 
 on:
   repository_dispatch:
