@@ -1,8 +1,8 @@
 name: ImmortalWrt-Builder-24.10
 
 on:
-  repository_dispatch:  # 保留外部触发
-  workflow_dispatch:    # 保留手动选择设备型号触发
+  repository_dispatch:
+  workflow_dispatch:
     inputs:
       device_model:
         description: '选择目标设备型号'
@@ -73,19 +73,14 @@ jobs:
       - name: 检查源仓库更新
         id: check
         run: |
-          # 获取源仓库最新提交的 SHA
           LATEST_SHA=$(curl -s -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/repos/padavanonly/immortalwrt-mt798x-24.10/commits/$REPO_BRANCH" | jq -r '.sha')
-          
-          # 检查上一次记录的 SHA
           LAST_CHECKED_FILE="last_checked_sha.txt"
           if [ -f "$LAST_CHECKED_FILE" ]; then
             LAST_CHECKED_SHA=$(cat "$LAST_CHECKED_FILE")
           else
             LAST_CHECKED_SHA=""
           fi
-
-          # 比较 SHA，决定是否需要编译
           if [ "$LATEST_SHA" != "$LAST_CHECKED_SHA" ]; then
             echo "检测到源仓库有新更新。最新 SHA: $LATEST_SHA，上次检查: $LAST_CHECKED_SHA"
             echo "should_build=true" >> $GITHUB_OUTPUT
@@ -103,7 +98,7 @@ jobs:
           path: last_checked_sha.txt
 
   build:
-    needs: check-source-updates  # 依赖检查更新任务
+    needs: check-source-updates
     if: github.event_name == 'workflow_dispatch' || (needs.check-source-updates.outputs.should_build == 'true' && github.event_name != 'workflow_dispatch')
     runs-on: ubuntu-22.04
     name: 编译 ${{ matrix.device_model }}
@@ -205,10 +200,19 @@ jobs:
         if: steps.compile.outputs.status == 'success'
         run: |
           cd openwrt
-          if [ -f "version" ]; then
-            VERSION=$(cat version)
+          VERSION_FILE=$(find bin/targets/*/*/ -type f -name "build.version" 2>/dev/null | head -n 1)
+          if [ -n "$VERSION_FILE" ] && [ -f "$VERSION_FILE" ]; then
+            VERSION=$(cat "$VERSION_FILE")
+            echo "从 $VERSION_FILE 提取版本: $VERSION"
           else
-            VERSION="24.10-SNAPSHOT r$(git rev-list --count HEAD)-$(git rev-parse --short HEAD)"
+            VERSION_FILE=$(find staging_dir/target-*/root-*/etc/ -type f -name "build.version" 2>/dev/null | head -n 1)
+            if [ -n "$VERSION_FILE" ] && [ -f "$VERSION_FILE" ]; then
+              VERSION=$(cat "$VERSION_FILE")
+              echo "从 $VERSION_FILE 提取版本: $VERSION"
+            else
+              VERSION="24.10-SNAPSHOT r$(git rev-list --count origin/$REPO_BRANCH)-$(git rev-parse --short origin/$REPO_BRANCH)"
+              echo "未找到 build.version，使用源仓库版本: $VERSION"
+            fi
           fi
           echo "FIRMWARE_VERSION=$VERSION" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
@@ -251,7 +255,7 @@ jobs:
           mkdir -p temp
           find . -type f \( -name "*sysupgrade.bin" -o -name "*factory.bin" \) -exec cp {} temp/ \;
           cd temp
-          ZIP_NAME="${{ matrix.device_model }}${{ env.FILE_DATE }}_25dB-${{ (github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true') && 'on' || 'off' }}.zip"
+          ZIP_NAME="${{ matrix.device_model }}_25dB-${{ (github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true') && 'on' || 'off' }}.zip"
           zip -r "$ZIP_NAME" .
           echo "ZIP_PATH=$PWD/$ZIP_NAME" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
