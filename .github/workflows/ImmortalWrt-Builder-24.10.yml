@@ -214,7 +214,10 @@ jobs:
               echo "未找到 build.version，使用源仓库版本: $VERSION"
             fi
           fi
-          echo "FIRMWARE_VERSION=$VERSION" >> $GITHUB_ENV
+          # 提取 rXXXXX 部分
+          SAFE_VERSION=$(echo "$VERSION" | grep -o 'r[0-9]\+' || echo "r0000")
+          echo "提取的版本号: $SAFE_VERSION"
+          echo "FIRMWARE_VERSION=$SAFE_VERSION" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
 
       - name: 检查磁盘
@@ -239,7 +242,7 @@ jobs:
           for file in *sysupgrade.bin *factory.bin; do
             if [ -f "$file" ]; then
               TYPE=$(echo "$file" | grep -o "sysupgrade\|factory")
-              NEW_NAME="${{ matrix.device_model }}_25dB-${{ (github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true') && 'on' || 'off' }}_${TYPE}.bin"
+              NEW_NAME="${{ matrix.device_model }}_25dB-${{ (github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true') && 'on' || 'off' }}_${{ env.FIRMWARE_VERSION }}_${TYPE}.bin"
               mv "$file" "$NEW_NAME"
             fi
           done
@@ -255,7 +258,7 @@ jobs:
           mkdir -p temp
           find . -type f \( -name "*sysupgrade.bin" -o -name "*factory.bin" \) -exec cp {} temp/ \;
           cd temp
-          ZIP_NAME="${{ matrix.device_model }}_25dB-${{ (github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true') && 'on' || 'off' }}.zip"
+          ZIP_NAME="${{ matrix.device_model }}_25dB-${{ (github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true') && 'on' || 'off' }}_${{ env.FIRMWARE_VERSION }}.zip"
           zip -r "$ZIP_NAME" .
           echo "ZIP_PATH=$PWD/$ZIP_NAME" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
@@ -305,10 +308,11 @@ jobs:
         run: |
           set -e
           echo "开始上传到 WebDAV: ${{ env.ZIP_PATH }} -> ${{ env.WEBDAV_URL }}/${{ env.ZIP_NAME }}"
-          MAX_RETRIES=3
-          RETRY_DELAY=10
+          START_TIME=$(date +%s)           # 记录开始时间（秒）
+          TIMEOUT=3600                     # 1小时超时（3600秒）
+          RETRY_DELAY=15                   # 每次重试间隔15秒
           ATTEMPT=1
-          while [ $ATTEMPT -le $MAX_RETRIES ]; do
+          while true; do
             echo "尝试第 $ATTEMPT 次上传..."
             STATUS=$(curl -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
                           -T "${{ env.ZIP_PATH }}" \
@@ -321,10 +325,13 @@ jobs:
               break
             else
               echo "上传失败，状态码: $STATUS"
-              if [ $ATTEMPT -eq $MAX_RETRIES ]; then
-                echo "错误：经过 $MAX_RETRIES 次尝试后仍无法上传到 WebDAV"
+              CURRENT_TIME=$(date +%s)
+              ELAPSED_TIME=$((CURRENT_TIME - START_TIME))
+              if [ $ELAPSED_TIME -ge $TIMEOUT ]; then
+                echo "错误：经过 1 小时（$ELAPSED_TIME 秒）尝试后仍无法上传到 WebDAV，终止任务"
                 exit 1
               fi
+              echo "等待 $RETRY_DELAY 秒后重试... 已用时 $ELAPSED_TIME 秒"
               sleep $RETRY_DELAY
             fi
             ATTEMPT=$((ATTEMPT + 1))
@@ -335,11 +342,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release list --repo ${{ github.repository }} --limit 100 | tail -n +4 | awk '{print $1}' | xargs -I {} gh release delete {} --yes
+          gh release list --repo ${{ github.repository }} --limit 100 | tail -n +21 | awk '{print $1}' | xargs -I {} gh release delete {} --yes
 
       - name: 清理旧工作流运行
         if: steps.tag.outputs.status == 'success'
         uses: Mattraks/delete-workflow-runs@v2
         with:
           retain_days: 0
-          keep_minimum_runs: 2
+          keep_minimum_runs: 20
