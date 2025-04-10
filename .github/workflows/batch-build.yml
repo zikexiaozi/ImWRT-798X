@@ -1,0 +1,201 @@
+name: ImmortalWrt-Builder-24.10-Batch-Manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      enable_5g_25db:
+        description: '启用 5G 25dB 修改'
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: write
+  actions: write
+
+env:
+  REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-24.10
+  REPO_BRANCH: 2410
+  FEEDS_CONF: feeds.conf.default
+  CONFIG_FILE: 2410.config
+  DIY_P1_SH: scripts/diy-part1.sh
+  DIY_P2_SH: scripts/diy-part2.sh
+  TZ: Asia/Shanghai
+  WEBDAV_URL: ${{ secrets.WEBDAV_URL }}
+  WEBDAV_USERNAME: ${{ secrets.WEBDAV_USERNAME }}
+  WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    strategy:
+      max-parallel: 5  # 限制同时运行 5 个任务，避免资源超载
+      matrix:
+        device_group:
+          - ["abt_asr3000", "Airpi-emmc-manper", "cetron_ct3003", "cmcc_a10", "cmcc_rax3000m"]
+          - ["cmcc_rax3000m-emmc", "cmcc_rax3000m-usboffload", "cmcc_rax3000m-emmc-usboffload", "cmcc_rax3000me", "cmcc_xr30"]
+          - ["cmcc_xr30-emmc", "cudy_tr3000-v1", "e-life_etr631-t", "e-life_etr635-u", "glinet_gl-mt2500"]
+          - ["glinet_gl-mt3000", "glinet_gl-x3000", "glinet_gl-xe3000", "h3c_nx30pro", "huasifei_wh3000-emmc"]
+          - ["imou_lc-hx3001", "jcg_q30", "konka_komi-a31", "kst_wf3000a", "livinet_zr-3020"]
+          - ["mt7981-360-t7", "mt7981-360-t7-108M", "mt7981-clt-r30b1", "mt7981-clt-r30b1-112M", "newland_nl-wr8103"]
+          - ["newland_nl-wr9103", "nokia_ea0326gmp", "nradio_wt9103", "nradio_wt9103_512m", "sl_3000"]
+          - ["sl_3000-emmc", "xiaomi_mi-router-ax3000t", "xiaomi_mi-router-ax3000t-stock", "xiaomi_mi-router-wr30u-112m", "xiaomi_mi-router-wr30u-stock"]
+    steps:
+      - name: 调试信息
+        run: |
+          echo "设备分组: ${{ join(matrix.device_group, ', ') }}"
+
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 初始化环境
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+            bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib \
+            git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev \
+            libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev \
+            libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 \
+            python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo \
+            uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev zip
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean
+          sudo timedatectl set-timezone "$TZ"
+          sudo mkdir -p /workdir
+          sudo chown $USER:$GROUPS /workdir
+
+      - name: 克隆源码
+        working-directory: /workdir
+        run: |
+          git clone $REPO_URL -b $REPO_BRANCH openwrt
+          ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+
+      - name: 缓存依赖
+        uses: actions/cache@v4
+        with:
+          path: |
+            openwrt/dl
+            openwrt/staging_dir
+          key: ${{ runner.os }}-build-${{ hashFiles('openwrt/.config') }}-${{ github.run_id }}
+          restore-keys: ${{ runner.os }}-build-
+
+      - name: 加载 Feeds
+        run: |
+          [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
+          chmod +x $DIY_P1_SH
+          cd openwrt
+          $GITHUB_WORKSPACE/$DIY_P1_SH
+
+      - name: 更新 Feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: 加载配置
+        run: |
+          [ -e files ] && mv files openwrt/files
+          [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+          for model in ${{ join(matrix.device_group, ' ') }}; do
+            echo "CONFIG_TARGET_mediatek_mt7981_DEVICE_${model}=y" >> openwrt/.config
+          done
+          chmod +x $DIY_P2_SH
+          cd openwrt
+          $GITHUB_WORKSPACE/$DIY_P2_SH
+          make defconfig
+
+      - name: 下载软件包
+        run: |
+          cd openwrt
+          make download -j8
+          find dl -size -1024c -exec rm -f {} \;
+
+      - name: 修改 5G 25dB
+        if: github.event.inputs.enable_5g_25db == 'true'
+        working-directory: ./openwrt
+        run: |
+          mkdir -p package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom
+          printf '\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B' | dd of=package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom/MT7981_iPAiLNA_EEPROM.bin bs=1 seek=$((0x445)) conv=notrunc
+
+      - name: 编译固件
+        id: compile
+        timeout-minutes: 120
+        run: |
+          set -e
+          cd openwrt
+          echo -e "$(nproc) thread compile"
+          make -j$(nproc) || make -j1 V=s 2> build_error.log
+          if [ $? -eq 0 ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            echo "status=failed" >> $GITHUB_OUTPUT
+            cat build_error.log
+            exit 1
+          fi
+          echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+
+      - name: 提取固件版本号
+        id: version
+        if: steps.compile.outputs.status == 'success'
+        run: |
+          cd openwrt
+          VERSION_FILE=$(find bin/targets/*/*/ -type f -name "build.version" 2>/dev/null | head -n 1)
+          if [ -n "$VERSION_FILE" ] && [ -f "$VERSION_FILE" ]; then
+            VERSION=$(cat "$VERSION_FILE")
+          else
+            VERSION="24.10-SNAPSHOT r$(git rev-list --count origin/$REPO_BRANCH)-$(git rev-parse --short origin/$REPO_BRANCH)"
+          fi
+          SAFE_VERSION=$(echo "$VERSION" | grep -o 'r[0-9]\+' || echo "r0000")
+          echo "FIRMWARE_VERSION=$SAFE_VERSION" >> $GITHUB_ENV
+
+      - name: 整理固件并按机型压缩
+        id: organize
+        if: steps.compile.outputs.status == 'success'
+        run: |
+          set -e
+          cd openwrt/bin/targets/*/*
+          rm -rf packages
+          for model in ${{ join(matrix.device_group, ' ') }}; do
+            mkdir -p "temp_$model"
+            for file in *${model}*sysupgrade.bin *${model}*factory.bin; do
+              if [ -f "$file" ]; then
+                TYPE=$(echo "$file" | grep -o "sysupgrade\|factory")
+                NEW_NAME="${model}_25dB-${{ github.event.inputs.enable_5g_25db == 'true' && 'on' || 'off' }}_${{ env.FIRMWARE_VERSION }}_${TYPE}.bin"
+                mv "$file" "temp_$model/$NEW_NAME"
+              fi
+            done
+            cd "temp_$model"
+            zip -r "../${model}_25dB-${{ github.event.inputs.enable_5g_25db == 'true' && 'on' || 'off' }}_${{ env.FIRMWARE_VERSION }}.zip" .
+            cd ..
+            rm -rf "temp_$model"
+          done
+          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT
+
+      - name: 上传到 WebDAV
+        if: steps.organize.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
+        run: |
+          set -e
+          cd ${{ env.FIRMWARE }}
+          for zip_file in *.zip; do
+            if [ -f "$zip_file" ]; then
+              echo "上传 $zip_file 到 WebDAV"
+              STATUS=$(curl -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
+                -T "$zip_file" "${{ env.WEBDAV_URL }}/$zip_file" \
+                -w "%{http_code}" -o /dev/null -s)
+              if [ "$STATUS" -eq 201 ] || [ "$STATUS" -eq 204 ]; then
+                echo "$zip_file 上传成功，状态码: $STATUS"
+              else
+                echo "错误：$zip_file 上传失败，状态码: $STATUS"
+                exit 1
+              fi
+            fi
+          done
+
+      - name: 检查磁盘
+        if: always()
+        run: df -hT
