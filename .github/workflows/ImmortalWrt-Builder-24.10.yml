@@ -9,21 +9,42 @@ on:
         type: choice
         required: true
         options:
-          - cmcc_rax3000m
-          - cmcc_rax3000m-emmc
-          - cmcc_rax3000m-usboffload
-          - cmcc_rax3000m-emmc-usboffload
           - abt_asr3000
+          - Airpi-emmc-manper
           - cetron_ct3003
           - cmcc_a10
+          - cmcc_rax3000m
+          - cmcc_rax3000m-emmc
+          - cmcc_rax3000m-emmc-usboffload
+          - cmcc_rax3000m-usboffload
+          - cmcc_rax3000me
+          - cmcc_xr30
+          - cmcc_xr30-emmc
+          - cudy_tr3000-v1
+          - e-life_etr631-t
+          - e-life_etr635-u
+          - glinet_gl-mt2500
+          - glinet_gl-mt3000
+          - glinet_gl-x3000
+          - glinet_gl-xe3000
           - h3c_nx30pro
+          - huasifei_wh3000-emmc
           - imou_lc-hx3001
           - jcg_q30
           - konka_komi-a31
+          - kst_wf3000a
           - livinet_zr-3020
+          - mt7981-360-t7
           - mt7981-360-t7-108M
           - mt7981-clt-r30b1
           - mt7981-clt-r30b1-112M
+          - newland_nl-wr8103
+          - newland_nl-wr9103
+          - nokia_ea0326gmp
+          - nradio_wt9103
+          - nradio_wt9103_512m
+          - sl_3000
+          - sl_3000-emmc
           - xiaomi_mi-router-ax3000t
           - xiaomi_mi-router-ax3000t-stock
           - xiaomi_mi-router-wr30u-112m
@@ -38,6 +59,8 @@ on:
         type: boolean
         required: false
         default: false
+  schedule:
+    - cron: '0 0 * * *'  # 每天 UTC 时间 00:00 运行（北京时间 08:00）
 
 permissions:
   contents: write
