@@ -365,11 +365,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release list --repo ${{ github.repository }} --limit 100 | tail -n +21 | awk '{print $1}' | xargs -I {} gh release delete {} --yes
+          gh release list --repo ${{ github.repository }} --limit 100 | tail -n +31 | awk '{print $1}' | xargs -I {} gh release delete {} --yes
 
       - name: 清理旧工作流运行
         if: steps.tag.outputs.status == 'success'
         uses: Mattraks/delete-workflow-runs@v2
         with:
           retain_days: 0
-          keep_minimum_runs: 20
+          keep_minimum_runs: 30
