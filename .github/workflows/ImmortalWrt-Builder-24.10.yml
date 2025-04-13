@@ -9,9 +9,6 @@ on:
         type: choice
         required: true
         options:
-          - abt_asr3000
-          - Airpi-emmc-manper
-          - cetron_ct3003
           - cmcc_a10
           - cmcc_rax3000m
           - cmcc_rax3000m-emmc
@@ -20,45 +17,11 @@ on:
           - cmcc_rax3000me
           - cmcc_xr30
           - cmcc_xr30-emmc
-          - cudy_tr3000-v1
-          - e-life_etr631-t
-          - e-life_etr635-u
-          - glinet_gl-mt2500
-          - glinet_gl-mt3000
-          - glinet_gl-x3000
-          - glinet_gl-xe3000
-          - h3c_nx30pro
-          - huasifei_wh3000-emmc
-          - imou_lc-hx3001
-          - jcg_q30
-          - konka_komi-a31
-          - kst_wf3000a
-          - livinet_zr-3020
-          - mt7981-360-t7
-          - mt7981-360-t7-108M
-          - mt7981-clt-r30b1
-          - mt7981-clt-r30b1-112M
-          - newland_nl-wr8103
-          - newland_nl-wr9103
-          - nokia_ea0326gmp
-          - nradio_wt9103
-          - nradio_wt9103_512m
-          - sl_3000
-          - sl_3000-emmc
-          - xiaomi_mi-router-ax3000t
-          - xiaomi_mi-router-ax3000t-stock
-          - xiaomi_mi-router-wr30u-112m
-          - xiaomi_mi-router-wr30u-stock
       enable_5g_25db:
         description: '启用 5G 25dB 修改'
         type: boolean
         required: true
         default: true
-      upload_bin_dir:
-        description: '上传 bin 目录'
-        type: boolean
-        required: false
-        default: false
   schedule:
     - cron: '0 0 * * *'  # 每天 UTC 时间 00:00 运行（北京时间 08:00）
 
@@ -127,7 +90,7 @@ jobs:
     name: 编译 ${{ matrix.device_model }}
     strategy:
       matrix:
-        device_model: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', github.event.inputs.device_model)) || fromJSON('["cmcc_rax3000m-usboffload", "cmcc_rax3000m-emmc-usboffload"]') }}
+        device_model: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', github.event.inputs.device_model)) || fromJSON('["cmcc_a10", "cmcc_rax3000m", "cmcc_rax3000m-emmc", "cmcc_rax3000m-emmc-usboffload", "cmcc_rax3000m-usboffload", "cmcc_rax3000me", "cmcc_xr30", "cmcc_xr30-emmc"]') }}
     steps:
       - name: 调试信息
         run: |
@@ -237,7 +200,6 @@ jobs:
               echo "未找到 build.version，使用源仓库版本: $VERSION"
             fi
           fi
-          # 提取 rXXXXX 部分
           SAFE_VERSION=$(echo "$VERSION" | grep -o 'r[0-9]\+' || echo "r0000")
           echo "提取的版本号: $SAFE_VERSION"
           echo "FIRMWARE_VERSION=$SAFE_VERSION" >> $GITHUB_ENV
@@ -248,13 +210,6 @@ jobs:
         run: |
           df -hT
 
-      - name: 上传 bin
-        uses: actions/upload-artifact@v4
-        if: steps.compile.outputs.status == 'success' && github.event_name == 'workflow_dispatch' && github.event.inputs.upload_bin_dir == 'true'
-        with:
-          name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-          path: openwrt/bin
-
       - name: 整理固件并固定文件名
         id: organize
         if: env.UPLOAD_FIRMWARE == 'true' && steps.compile.outputs.status == 'success'
@@ -262,28 +217,14 @@ jobs:
           set -e
           cd openwrt/bin/targets/*/*
           rm -rf packages
-          for file in *sysupgrade.bin *factory.bin; do
+          for file in *sysupgrade.bin; do
             if [ -f "$file" ]; then
-              TYPE=$(echo "$file" | grep -o "sysupgrade\|factory")
-              NEW_NAME="${{ matrix.device_model }}_25dB-${{ (github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true') && 'on' || 'off' }}_${{ env.FIRMWARE_VERSION }}_${TYPE}.bin"
+              NEW_NAME="${{ matrix.device_model }}_25dB-${{ (github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true') && 'on' || 'off' }}_${{ env.FIRMWARE_VERSION }}_sysupgrade.bin"
               mv "$file" "$NEW_NAME"
+              echo "FIRMWARE_FILE=$PWD/$NEW_NAME" >> $GITHUB_ENV
             fi
           done
           echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-          echo "status=success" >> $GITHUB_OUTPUT
-
-      - name: 筛选并压缩固件
-        id: compress
-        if: steps.compile.outputs.status == 'success'
-        run: |
-          set -e
-          cd ${{ env.FIRMWARE }}
-          mkdir -p temp
-          find . -type f \( -name "*sysupgrade.bin" -o -name "*factory.bin" \) -exec cp {} temp/ \;
-          cd temp
-          ZIP_NAME="${{ matrix.device_model }}_25dB-${{ (github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true') && 'on' || 'off' }}_${{ env.FIRMWARE_VERSION }}.zip"
-          zip -r "$ZIP_NAME" .
-          echo "ZIP_PATH=$PWD/$ZIP_NAME" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
 
       - name: 生成标签和发布描述
@@ -322,29 +263,28 @@ jobs:
           tag_name: ${{ steps.tag.outputs.RELEASE_TAG }}
           body_path: release.txt
           files: |
-            ${{ env.FIRMWARE }}/*sysupgrade.bin
-            ${{ env.FIRMWARE }}/*factory.bin
+            ${{ env.FIRMWARE_FILE }}
           overwrite: true
 
       - name: 上传到 WebDAV
-        if: steps.compress.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
+        if: steps.organize.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
         run: |
           set -e
-          echo "开始上传到 WebDAV: ${{ env.ZIP_PATH }} -> ${{ env.WEBDAV_URL }}/${{ env.ZIP_NAME }}"
-          START_TIME=$(date +%s)           # 记录开始时间（秒）
-          TIMEOUT=3600                     # 1小时超时（3600秒）
-          RETRY_DELAY=15                   # 每次重试间隔15秒
+          echo "开始上传到 WebDAV: ${{ env.FIRMWARE_FILE }} -> ${{ env.WEBDAV_URL }}/$(basename ${{ env.FIRMWARE_FILE }})"
+          START_TIME=$(date +%s)
+          TIMEOUT=3600
+          RETRY_DELAY=15
           ATTEMPT=1
           while true; do
             echo "尝试第 $ATTEMPT 次上传..."
             STATUS=$(curl -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
-                          -T "${{ env.ZIP_PATH }}" \
-                          "${{ env.WEBDAV_URL }}/${{ env.ZIP_NAME }}" \
+                          -T "${{ env.FIRMWARE_FILE }}" \
+                          "${{ env.WEBDAV_URL }}/$(basename ${{ env.FIRMWARE_FILE }})" \
                           -w "%{http_code}" -o /dev/null -s)
             if [ "$STATUS" -eq 201 ] || [ "$STATUS" -eq 204 ]; then
               echo "上传成功，状态码: $STATUS"
               curl -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
-                   -I "${{ env.WEBDAV_URL }}/${{ env.ZIP_NAME }}" -s | grep "HTTP/1.1 200" && echo "文件验证成功" || echo "警告：文件可能未正确上传"
+                   -I "${{ env.WEBDAV_URL }}/$(basename ${{ env.FIRMWARE_FILE }})" -s | grep "HTTP/1.1 200" && echo "文件验证成功" || echo "警告：文件可能未正确上传"
               break
             else
               echo "上传失败，状态码: $STATUS"
