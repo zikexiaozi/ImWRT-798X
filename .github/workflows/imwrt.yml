@@ -1,4 +1,4 @@
-name: ImmortalWrt-Builder-24.10
+name: ImmWrt-Builder-24.10
 
 on:
   repository_dispatch:
