@@ -242,19 +242,7 @@ jobs:
           echo "FIRMWARE=$PWD" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
 
-      - name: 筛选并压缩固件
-        id: compress
-        if: steps.compile.outputs.status == 'success'
-        run: |
-          set -e
-          cd ${{ env.FIRMWARE }}
-          mkdir -p temp
-          find . -type f \( -name "*sysupgrade.bin" -o -name "*factory.bin" \) -exec cp {} temp/ \;
-          cd temp
-          ZIP_NAME="${{ matrix.device_model }}_25dB-${{ (github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true') && 'on' || 'off' }}_${{ env.FIRMWARE_VERSION }}.zip"
-          zip -r "$ZIP_NAME" .
-          echo "ZIP_PATH=$PWD/$ZIP_NAME" >> $GITHUB_ENV
-          echo "status=success" >> $GITHUB_OUTPUT
+      
 
       - name: 生成标签和发布描述
         id: tag
@@ -297,38 +285,20 @@ jobs:
           overwrite: true
 
       - name: 上传到 WebDAV
-        if: steps.compress.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
-        run: |
-          set -e
-          echo "开始上传到 WebDAV: ${{ env.ZIP_PATH }} -> ${{ env.WEBDAV_URL }}/${{ env.ZIP_NAME }}"
-          START_TIME=$(date +%s)           # 记录开始时间（秒）
-          TIMEOUT=3600                     # 1小时超时（3600秒）
-          RETRY_DELAY=15                   # 每次重试间隔15秒
-          ATTEMPT=1
-          while true; do
-            echo "尝试第 $ATTEMPT 次上传..."
-            STATUS=$(curl -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
-                          -T "${{ env.ZIP_PATH }}" \
-                          "${{ env.WEBDAV_URL }}/${{ env.ZIP_NAME }}" \
-                          -w "%{http_code}" -o /dev/null -s)
-            if [ "$STATUS" -eq 201 ] || [ "$STATUS" -eq 204 ]; then
-              echo "上传成功，状态码: $STATUS"
-              curl -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
-                   -I "${{ env.WEBDAV_URL }}/${{ env.ZIP_NAME }}" -s | grep "HTTP/1.1 200" && echo "文件验证成功" || echo "警告：文件可能未正确上传"
-              break
-            else
-              echo "上传失败，状态码: $STATUS"
-              CURRENT_TIME=$(date +%s)
-              ELAPSED_TIME=$((CURRENT_TIME - START_TIME))
-              if [ $ELAPSED_TIME -ge $TIMEOUT ]; then
-                echo "错误：经过 1 小时（$ELAPSED_TIME 秒）尝试后仍无法上传到 WebDAV，终止任务"
-                exit 1
-              fi
-              echo "等待 $RETRY_DELAY 秒后重试... 已用时 $ELAPSED_TIME 秒"
-              sleep $RETRY_DELAY
-            fi
-            ATTEMPT=$((ATTEMPT + 1))
-          done
+  if: steps.compress.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
+  run: |
+    set -e
+    # 查找 sysupgrade.bin 文件路径
+    SYSUPGRADE_FILE=$(find ${{ env.FIRMWARE }} -type f -name "*sysupgrade.bin" | head -n 1)
+    if [ -z "$SYSUPGRADE_FILE" ]; then
+      echo "未找到 sysupgrade.bin 文件，跳过上传"
+      exit 0
+    fi
+    echo "开始上传到 WebDAV: $SYSUPGRADE_FILE -> ${{ env.WEBDAV_URL }}/$(basename "$SYSUPGRADE_FILE")"
+    curl -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
+         -T "$SYSUPGRADE_FILE" \
+         "${{ env.WEBDAV_URL }}/$(basename "$SYSUPGRADE_FILE")"
+    echo "上传完成：$(basename "$SYSUPGRADE_FILE")"
 
       - name: 清理旧 Releases
         if: steps.tag.outputs.status == 'success'
