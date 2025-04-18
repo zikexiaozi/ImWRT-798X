@@ -285,20 +285,33 @@ jobs:
           overwrite: true
 
       - name: 上传到 WebDAV
-  if: steps.compress.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
+  if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
   run: |
     set -e
-    # 查找 sysupgrade.bin 文件路径
-    SYSUPGRADE_FILE=$(find ${{ env.FIRMWARE }} -type f -name "*sysupgrade.bin" | head -n 1)
-    if [ -z "$SYSUPGRADE_FILE" ]; then
+    echo "开始查找并上传 sysupgrade.bin 文件到 WebDAV..."
+
+    # 查找 sysupgrade.bin 文件
+    SYSUPGRADE_FILES=$(find openwrt/bin/targets -type f -name "*sysupgrade.bin")
+    if [ -z "$SYSUPGRADE_FILES" ]; then
       echo "未找到 sysupgrade.bin 文件，跳过上传"
       exit 0
     fi
-    echo "开始上传到 WebDAV: $SYSUPGRADE_FILE -> ${{ env.WEBDAV_URL }}/$(basename "$SYSUPGRADE_FILE")"
-    curl -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
-         -T "$SYSUPGRADE_FILE" \
-         "${{ env.WEBDAV_URL }}/$(basename "$SYSUPGRADE_FILE")"
-    echo "上传完成：$(basename "$SYSUPGRADE_FILE")"
+
+    # 循环上传每个 sysupgrade.bin 文件
+    for FILE in $SYSUPGRADE_FILES; do
+      echo "正在上传文件: $FILE"
+      curl -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
+           -T "$FILE" \
+           "${{ env.WEBDAV_URL }}/$(basename "$FILE")"
+      if [ $? -eq 0 ]; then
+        echo "上传成功: $(basename "$FILE")"
+      else
+        echo "上传失败: $(basename "$FILE")"
+        exit 1
+      fi
+    done
+
+    echo "所有文件上传完成。"
 
       - name: 清理旧 Releases
         if: steps.tag.outputs.status == 'success'
