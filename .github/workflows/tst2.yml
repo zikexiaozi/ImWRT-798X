@@ -1,4 +1,4 @@
-name: tet-24.10
+name: tet2-24.10
 
 on:
   repository_dispatch:
