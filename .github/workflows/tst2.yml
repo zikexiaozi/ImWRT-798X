@@ -193,18 +193,18 @@ jobs:
         if: steps.compile.outputs.status == 'success'
         run: |
           cd openwrt
-          VERSION_FILE=$(find bin/targets/*/*/ -type f -name "build.version" 2>/dev/null | head -n 1)
+          VERSION_FILE=$(find bin/targets/*/*/ -type f -name "openwrt_version" 2>/dev/null | head -n 1)
           if [ -n "$VERSION_FILE" ] && [ -f "$VERSION_FILE" ]; then
             VERSION=$(cat "$VERSION_FILE")
             echo "从 $VERSION_FILE 提取版本: $VERSION"
           else
-            VERSION_FILE=$(find staging_dir/target-*/root-*/etc/ -type f -name "build.version" 2>/dev/null | head -n 1)
+            VERSION_FILE=$(find staging_dir/target-*/root-*/etc/ -type f -name "openwrt_version" 2>/dev/null | head -n 1)
             if [ -n "$VERSION_FILE" ] && [ -f "$VERSION_FILE" ]; then
               VERSION=$(cat "$VERSION_FILE")
               echo "从 $VERSION_FILE 提取版本: $VERSION"
             else
               VERSION="24.10-SNAPSHOT r$(git rev-list --count origin/$REPO_BRANCH)-$(git rev-parse --short origin/$REPO_BRANCH)"
-              echo "未找到 build.version，使用源仓库版本: $VERSION"
+              echo "未找到 openwrt_version，使用源仓库版本: $VERSION"
             fi
           fi
           # 提取 rXXXXX 部分
