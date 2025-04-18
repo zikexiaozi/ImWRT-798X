@@ -285,8 +285,8 @@ jobs:
           overwrite: true
 
       - name: 上传到 WebDAV
-  if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
-  run: |
+        if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
+        run: |
     set -e
     echo "开始查找并上传 sysupgrade.bin 文件到 WebDAV..."
 
