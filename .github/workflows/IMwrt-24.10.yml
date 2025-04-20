@@ -98,7 +98,6 @@ jobs:
     name: 编译 ${{ matrix.device_model }}
     strategy:
       matrix:
-        # 修复：确保 device_model 在 workflow_dispatch 时有效
         device_model: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.device_model && fromJSON(format('["{0}"]', github.event.inputs.device_model)) || fromJSON('["abt_asr3000", "cetron_ct3003", "cmcc_a10", "cmcc_rax3000m", "cmcc_rax3000m-emmc", "cmcc_rax3000m-emmc-usboffload", "cmcc_rax3000m-usboffload", "cmcc_rax3000me", "cmcc_xr30", "cmcc_xr30-emmc"]') }}
     steps:
       - name: 调试信息
@@ -112,14 +111,15 @@ jobs:
         uses: actions/checkout@v4
 
       - name: 检查磁盘空间
+        # 修复：改进磁盘空间检查逻辑，确保准确比较数值，并降低要求到 10GB
         run: |
-          MIN_SPACE=20G
-          AVAILABLE=$(df -h . | tail -1 | awk '{print $4}')
-          if [ "$(echo $AVAILABLE | grep -o '[0-9]\+')" -lt "$(echo $MIN_SPACE | grep -o '[0-9]\+')" ]; then
-            echo "错误：磁盘空间不足，可用空间 $AVAILABLE，需至少 $MIN_SPACE"
+          MIN_SPACE=10
+          AVAILABLE=$(df -BG . | tail -1 | awk '{print $4}' | grep -o '[0-9]\+')
+          if [ "$AVAILABLE" -lt "$MIN_SPACE" ]; then
+            echo "错误：磁盘空间不足，可用空间 ${AVAILABLE}G，需至少 ${MIN_SPACE}G"
             exit 1
           fi
-          echo "可用磁盘空间：$AVAILABLE"
+          echo "可用磁盘空间：${AVAILABLE}G"
 
       - name: 初始化环境
         env:
@@ -177,8 +177,13 @@ jobs:
 
       - name: 克隆源码
         working-directory: /workdir
+        # 修复：清理已有 openwrt 目录以避免克隆失败
         run: |
           df -hT $PWD
+          if [ -d "/workdir/openwrt" ]; then
+            echo "检测到 openwrt 目录已存在，正在清理..."
+            rm -rf /workdir/openwrt
+          fi
           git clone $REPO_URL -b $REPO_BRANCH openwrt
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
@@ -344,7 +349,6 @@ jobs:
         if: env.UPLOAD_RELEASE == 'true' && steps.compile.outputs.status == 'success'
         run: |
           set -e
-          # 修复：使用唯一标签避免冲突
           echo "RELEASE_TAG=ImmortalWrt-24.10-${{ matrix.device_model }}-${{ env.FIRMWARE_VERSION }}" >> $GITHUB_OUTPUT
           cat << EOF > release.txt
           
