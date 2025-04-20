@@ -98,7 +98,8 @@ jobs:
     name: 编译 ${{ matrix.device_model }}
     strategy:
       matrix:
-        device_model: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', github.event.inputs.device_model)) || fromJSON('["abt_asr3000", "cetron_ct3003", "cmcc_a10", "cmcc_rax3000m", "cmcc_rax3000m-emmc", "cmcc_rax3000m-emmc-usboffload", "cmcc_rax3000m-usboffload", "cmcc_rax3000me", "cmcc_xr30", "cmcc_xr30-emmc"]') }}
+        # 修复：确保 device_model 在 workflow_dispatch 时有效
+        device_model: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.device_model && fromJSON(format('["{0}"]', github.event.inputs.device_model)) || fromJSON('["abt_asr3000", "cetron_ct3003", "cmcc_a10", "cmcc_rax3000m", "cmcc_rax3000m-emmc", "cmcc_rax3000m-emmc-usboffload", "cmcc_rax3000m-usboffload", "cmcc_rax3000me", "cmcc_xr30", "cmcc_xr30-emmc"]') }}
     steps:
       - name: 调试信息
         run: |
@@ -109,6 +110,16 @@ jobs:
 
       - name: 检出代码
         uses: actions/checkout@v4
+
+      - name: 检查磁盘空间
+        run: |
+          MIN_SPACE=20G
+          AVAILABLE=$(df -h . | tail -1 | awk '{print $4}')
+          if [ "$(echo $AVAILABLE | grep -o '[0-9]\+')" -lt "$(echo $MIN_SPACE | grep -o '[0-9]\+')" ]; then
+            echo "错误：磁盘空间不足，可用空间 $AVAILABLE，需至少 $MIN_SPACE"
+            exit 1
+          fi
+          echo "可用磁盘空间：$AVAILABLE"
 
       - name: 初始化环境
         env:
@@ -181,6 +192,7 @@ jobs:
           fi
 
       - name: 加载 Feeds
+        timeout-minutes: 10
         run: |
           [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
           chmod +x $DIY_P1_SH
@@ -189,6 +201,7 @@ jobs:
 
       - name: 更新 Feeds
         if: steps.check_feeds.outputs.feeds_unchanged == 'false'
+        timeout-minutes: 20
         run: |
           cd openwrt
           ./scripts/feeds update -a || { echo "更新 Feeds 失败"; exit 1; }
@@ -206,6 +219,7 @@ jobs:
 
       - name: 下载软件包
         id: package
+        timeout-minutes: 30
         run: |
           cd openwrt
           make download -j8 || { echo "下载软件包失败"; exit 1; }
@@ -217,8 +231,13 @@ jobs:
         run: |
           EEPROM_FILE=package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom/MT7981_iPAiLNA_EEPROM.bin
           EXPECTED_CONTENT=$(printf '\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B')
-          if [ ! -f "$EEPROM_FILE" ] || ! dd if="$EEPROM_FILE" bs=1 skip=$((0x445)) count=20 2>/dev/null | grep -q "$EXPECTED_CONTENT"; then
-            mkdir -p package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom
+          if [ ! -f "$EEPROM_FILE" ]; then
+            echo "EEPROM 文件不存在，创建新文件"
+            mkdir -p "$(dirname "$EEPROM_FILE")"
+            touch "$EEPROM_FILE"
+          fi
+          CURRENT_CONTENT=$(dd if="$EEPROM_FILE" bs=1 skip=$((0x445)) count=20 2>/dev/null || echo "")
+          if [ "$CURRENT_CONTENT" != "$EXPECTED_CONTENT" ]; then
             printf '\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B' | dd of="$EEPROM_FILE" bs=1 seek=$((0x445)) conv=notrunc
             echo "EEPROM 文件已更新"
           else
@@ -258,7 +277,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: compile-log-${{ matrix.device_model }}
-          path: openwrt/build_dir/**/*.log
+          path: |
+            openwrt/build_dir/**/*.log
+            openwrt/logs/*.log
+            openwrt/*.log
 
       - name: 提取固件版本号
         id: version
@@ -275,11 +297,15 @@ jobs:
               VERSION=$(cat "$VERSION_FILE")
               echo "从 $VERSION_FILE 提取版本: $VERSION"
             else
-              VERSION="24.10-SNAPSHOT r$(git rev-list --count origin/$REPO_BRANCH)-$(git rev-parse --short origin/$REPO_BRANCH)"
+              VERSION="24.10-SNAPSHOT-r$(git rev-list --count origin/$REPO_BRANCH)-$(git rev-parse --short origin/$REPO_BRANCH)"
               echo "未找到 openwrt_version，使用源仓库版本: $VERSION"
             fi
           fi
           SAFE_VERSION=$(echo "$VERSION" | grep -o 'r[0-9]\+' || echo "r0000")
+          if [ -z "$SAFE_VERSION" ]; then
+            SAFE_VERSION="r0000"
+            echo "警告：无法提取有效版本号，使用默认值: $SAFE_VERSION"
+          fi
           echo "提取的版本号: $SAFE_VERSION"
           echo "FIRMWARE_VERSION=$SAFE_VERSION" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
@@ -318,7 +344,8 @@ jobs:
         if: env.UPLOAD_RELEASE == 'true' && steps.compile.outputs.status == 'success'
         run: |
           set -e
-          echo "RELEASE_TAG=ImmortalWrt 24.10 -${{ matrix.device_model }}" >> $GITHUB_OUTPUT
+          # 修复：使用唯一标签避免冲突
+          echo "RELEASE_TAG=ImmortalWrt-24.10-${{ matrix.device_model }}-${{ env.FIRMWARE_VERSION }}" >> $GITHUB_OUTPUT
           cat << EOF > release.txt
           
           **固件版本**: ImmortalWrt ${{ env.FIRMWARE_VERSION }}  
@@ -340,6 +367,15 @@ jobs:
             ${{ env.FIRMWARE }}/*sysupgrade.bin
             ${{ env.FIRMWARE }}/*factory.bin
           overwrite: true
+
+      - name: 检查 WebDAV 凭证
+        if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
+        run: |
+          if [ -z "$WEBDAV_URL" ] || [ -z "$WEBDAV_USERNAME" ] || [ -z "$WEBDAV_PASSWORD" ]; then
+            echo "错误：缺少 WebDAV 凭证 (WEBDAV_URL, WEBDAV_USERNAME, WEBDAV_PASSWORD)"
+            exit 1
+          fi
+          echo "WebDAV 凭证检查通过"
 
       - name: 上传到 WebDAV
         if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
@@ -365,7 +401,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release list --repo ${{ github.repository }} --limit 100 | grep -E "v24.10-${{ matrix.device_model }}" | tail -n +21 | awk '{print $1}' | xargs -I {} gh release delete {} --yes || true
+          RELEASES=$(gh release list --repo ${{ github.repository }} --limit 100 --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10-${{ matrix.device_model }}")) | .name' | tail -n +21)
+          if [ -n "$RELEASES" ]; then
+            for RELEASE in $RELEASES; do
+              gh release delete "$RELEASE" --yes || { echo "删除 Release $RELEASE 失败"; exit 1; }
+            done
+          else
+            echo "无需清理旧 Releases"
+          fi
 
       - name: 清理旧工作流运行
         if: steps.tag.outputs.status == 'success'
