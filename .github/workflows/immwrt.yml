@@ -107,17 +107,7 @@ jobs:
     name: 编译 ${{ matrix.device_model }} (${{ github.event.inputs.branch || '2410' }})
     strategy:
       matrix:
-        device_model:
-          - abt_asr3000
-          - cetron_ct3003
-          - cmcc_a10
-          - cmcc_rax3000m
-          - cmcc_rax3000m-emmc
-          - cmcc_rax3000m-emmc-usboffload
-          - cmcc_rax3000m-usboffload
-          - cmcc_rax3000me
-          - cmcc_xr30
-          - cmcc_xr30-emmc
+        device_model: ${{ github.event_name == 'workflow_dispatch' && fromJSON('["' + github.event.inputs.device_model + '"]') || fromJSON('["abt_asr3000", "cetron_ct3003", "cmcc_a10", "cmcc_rax3000m", "cmcc_rax3000m-emmc", "cmcc_rax3000m-emmc-usboffload", "cmcc_rax3000m-usboffload", "cmcc_rax3000me", "cmcc_xr30", "cmcc_xr30-emmc"]') }}
     steps:
       - name: 调试信息
         run: |
@@ -210,7 +200,7 @@ jobs:
           $GITHUB_WORKSPACE/$DIY_P1_SH
 
       - name: 更新 Feeds
-        if: steps.check_feeds.outputs.feeds_unchanged == 'false'
+        if: steps.check_feWS outputs.feeds_unchanged == 'false'
         timeout-minutes: 20
         run: |
           cd openwrt
@@ -373,17 +363,15 @@ jobs:
           echo "status=success" >> $GITHUB_OUTPUT
 
       - name: 发布固件
-        uses: softprops/action-gh-release@v2
+        uses: actions/upload-artifact@v4
         if: steps.tag.outputs.status == 'success'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ steps.tag.outputs.RELEASE_TAG }}
-          body_path: release.txt
-          files: |
+          name: firmware-${{ matrix.device_model }}-${{ github.event.inputs.branch || '2410' }}
+          path: |
             ${{ env.FIRMWARE }}/*sysupgrade.bin
             ${{ env.FIRMWARE }}/*factory.bin
-          overwrite: true
 
       - name: 检查 WebDAV 凭证
         if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
