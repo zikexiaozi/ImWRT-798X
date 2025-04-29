@@ -103,7 +103,7 @@ jobs:
   build:
     needs: check-source-updates
     if: ${{ github.event_name == 'workflow_dispatch' || (needs.check-source-updates.outputs.should_build == 'true' && github.event_name != 'workflow_dispatch') }}
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     name: 编译 ${{ matrix.device_model }} (${{ github.event.inputs.branch || '2410' }})
     strategy:
       matrix:
@@ -130,6 +130,15 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
+      - name: 检查运行环境
+        run: |
+          echo "Ubuntu 版本:"
+          lsb_release -a
+          echo "GCC 版本:"
+          gcc --version
+          echo "Python 版本:"
+          python3 --version
+
       - name: 检查磁盘空间
         run: |
           MIN_SPACE=10
@@ -144,24 +153,27 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          sudo docker image prune --all --force
-          sudo -E apt-get -qq update
-          sudo -E apt-get -qq install -y \
-            ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
-            bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext \
-            gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 \
-            libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev \
-            libmpfr-dev libncurses-dev libpython3-dev libreadline-dev libssl-dev \
+          # 更新 APT 源并安装依赖
+          sudo apt-get update || { echo "APT 更新失败"; exit 1; }
+          sudo apt-get install -y --no-install-recommends \
+            asciidoc autoconf automake autopoint binutils bison build-essential \
+            bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk \
+            gcc g++ git gperf haveged intltool libelf-dev libfuse-dev \
+            libglib2.0-dev libgmp-dev libltdl-dev libmpc-dev libmpfr-dev \
+            libncurses5-dev libpython3-dev libreadline-dev libssl-dev \
             libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf \
-            python3 python3-pyelftools python3-setuptools qemu-utils rsync scons \
+            python3 python3-elftools python3-setuptools qemu-utils rsync scons \
             squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget \
-            xmlto xxd zlib1g-dev zip jq
-          sudo -E apt-get -qq autoremove --purge
-          sudo -E apt-get -qq clean
-          sudo timedatectl set-timezone "$TZ"
+            xmlto xxd zlib1g-dev zip jq || { echo "依赖安装失败"; exit 1; }
+          # 清理 APT 缓存
+          sudo apt-get autoremove --purge
+          sudo apt-get clean
+          # 设置时区（避免直接修改系统时间）
+          echo "设置时区为 $TZ"
+          export TZ="$TZ"
+          # 创建工作目录并设置权限
           sudo mkdir -p /workdir
-          sudo chown $USER:$GROUPS /workdir
+          sudo chown $USER:$USER /workdir
 
       - name: 安装 GitHub CLI
         run: |
