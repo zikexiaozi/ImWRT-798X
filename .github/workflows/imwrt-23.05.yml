@@ -1,3 +1,4 @@
+```yaml
 name: IMwrt-23.05
 
 on:
@@ -49,7 +50,7 @@ env:
   WEBDAV_URL: ${{ secrets.WEBDAV_URL }}
   WEBDAV_USERNAME: ${{ secrets.WEBDAV_USERNAME }}
   WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
-  WEBDAV_PATH: WRT23.05  # New: Specify WebDAV folder for 23.05
+  WEBDAV_PATH: WRT23.05  # 指定 WebDAV 文件夹为 23.05
 
 jobs:
   check-source-updates:
@@ -57,10 +58,10 @@ jobs:
     outputs:
       should_build: ${{ steps.check.outputs.should_build }}
     steps:
-      - name: Checkout repository
+      - name: 检出仓库代码
         uses: actions/checkout@v4
 
-      - name: Check source repository updates
+      - name: 检查源仓库更新
         id: check
         run: |
           LATEST_SHA=$(curl -s -H "Accept: application/vnd.github.v3+json" \
@@ -68,15 +69,15 @@ jobs:
           LAST_CHECKED_FILE="last_checked_sha.txt"
           LAST_CHECKED_SHA=$(cat "$LAST_CHECKED_FILE" 2>/dev/null || echo "")
           if [ "$LATEST_SHA" != "$LAST_CHECKED_SHA" ]; then
-            echo "Source repository updated. Latest SHA: $LATEST_SHA, Last checked: $LAST_CHECKED_SHA"
+            echo "源仓库已更新。最新 SHA: $LATEST_SHA，上次检查: $LAST_CHECKED_SHA"
             echo "should_build=true" >> $GITHUB_OUTPUT
             echo "$LATEST_SHA" > "$LAST_CHECKED_FILE"
           else
-            echo "No updates in source repository, skipping build."
+            echo "源仓库无更新，跳过构建。"
             echo "should_build=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Upload last checked SHA
+      - name: 上传上次检查的 SHA
         if: steps.check.outputs.should_build == 'true'
         uses: actions/upload-artifact@v4
         with:
@@ -87,32 +88,32 @@ jobs:
     needs: check-source-updates
     if: github.event_name == 'workflow_dispatch' || (needs.check-source-updates.outputs.should_build == 'true' && github.event_name != 'workflow_dispatch')
     runs-on: ubuntu-22.04
-    name: Build ${{ matrix.device_model }}
+    name: 构建 ${{ matrix.device_model }}
     strategy:
       matrix:
         device_model: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.device_model && fromJSON(format('["{0}"]', github.event.inputs.device_model)) || fromJSON('["abt_asr3000", "cetron_ct3003", "cmcc_a10", "cmcc_rax3000m", "cmcc_rax3000m-emmc", "cmcc_rax3000m-emmc-usboffload", "cmcc_rax3000m-usboffload", "cmcc_rax3000me", "cmcc_xr30", "cmcc_xr30-emmc"]') }}
     steps:
-      - name: Debug information
+      - name: 调试信息
         run: |
-          echo "Trigger: ${{ github.event_name }}"
-          echo "Device model: ${{ matrix.device_model }}"
+          echo "触发器: ${{ github.event_name }}"
+          echo "设备型号: ${{ matrix.device_model }}"
           echo "5G 25dB: ${{ github.event.inputs.enable_5g_25db }}"
-          echo "Upload bin dir: ${{ github.event.inputs.upload_bin_dir }}"
+          echo "上传 bin 目录: ${{ github.event.inputs.upload_bin_dir }}"
 
-      - name: Checkout code
+      - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: Check disk space
+      - name: 检查磁盘空间
         run: |
           MIN_SPACE=10
           AVAILABLE=$(df -BG . | tail -1 | awk '{print $4}' | grep -o '[0-9]\+')
           if [ "$AVAILABLE" -lt "$MIN_SPACE" ]; then
-            echo "Error: Insufficient disk space, available: ${AVAILABLE}G, required: ${MIN_SPACE}G"
+            echo "错误：磁盘空间不足，可用: ${AVAILABLE}G，所需: ${MIN_SPACE}G"
             exit 1
           fi
-          echo "Available disk space: ${AVAILABLE}G"
+          echo "可用磁盘空间: ${AVAILABLE}G"
 
-      - name: Initialize environment
+      - name: 初始化环境
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
@@ -132,37 +133,7 @@ jobs:
           sudo mkdir -p /workdir
           sudo chown $USER:$GROUPS /workdir
 
-      - name: Cache build intermediates
-        uses: actions/cache@v4
-        with:
-          path: |
-            /workdir/openwrt/dl
-            /workdir/openwrt/build_dir
-            /workdir/openwrt/staging_dir
-          key: ${{ runner.os }}-build-${{ matrix.device_model }}-${{ hashFiles('openwrt/.config', 'feeds.conf.default') }}
-          restore-keys: ${{ runner.os }}-build-${{ matrix.device_model }}-
-
-      - name: Cache ccache
-        uses: actions/cache@v4
-        with:
-          path: ~/.ccache
-          key: ${{ runner.os }}-ccache-${{ matrix.device_model }}-${{ hashFiles('openwrt/.config', 'feeds.conf.default') }}
-          restore-keys: ${{ runner.os }}-ccache-${{ matrix.device_model }}-
-
-      - name: Configure ccache
-        run: |
-          echo "export PATH=/usr/lib/ccache:$PATH" >> $GITHUB_ENV
-          echo "export CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
-          ccache -M 5G
-
-      - name: Cache Feeds
-        uses: actions/cache@v4
-        with:
-          path: /workdir/openwrt/feeds
-          key: ${{ runner.os }}-feeds-${{ hashFiles('feeds.conf.default') }}
-          restore-keys: ${{ runner.os }}-feeds-
-
-      - name: Clone source code
+      - name: 克隆源代码
         working-directory: /workdir
         run: |
           df -hT $PWD
@@ -170,7 +141,7 @@ jobs:
           git clone $REPO_URL -b $REPO_BRANCH openwrt
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-      - name: Check Feeds configuration changes
+      - name: 检查 Feeds 配置变化
         id: check_feeds
         run: |
           if [ -f openwrt/feeds.conf.default ] && cmp -s openwrt/feeds.conf.default $FEEDS_CONF; then
@@ -179,7 +150,7 @@ jobs:
             echo "feeds_unchanged=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Load Feeds
+      - name: 加载 Feeds
         timeout-minutes: 10
         run: |
           [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
@@ -187,15 +158,15 @@ jobs:
           cd openwrt
           $GITHUB_WORKSPACE/$DIY_P1_SH
 
-      - name: Update Feeds
+      - name: 更新 Feeds
         if: steps.check_feeds.outputs.feeds_unchanged == 'false'
         timeout-minutes: 20
         run: |
           cd openwrt
-          ./scripts/feeds update -a || { echo "Failed to update Feeds"; exit 1; }
-          ./scripts/feeds install -a || { echo "Failed to install Feeds"; exit 1; }
+          ./scripts/feeds update -a || { echo "更新 Feeds 失败"; exit 1; }
+          ./scripts/feeds install -a || { echo "安装 Feeds 失败"; exit 1; }
 
-      - name: Load configuration
+      - name: 加载配置
         run: |
           [ -e files ] && mv files openwrt/files
           [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
@@ -205,33 +176,33 @@ jobs:
           $GITHUB_WORKSPACE/$DIY_P2_SH
           make defconfig
 
-      - name: Download packages
+      - name: 下载软件包
         timeout-minutes: 30
         run: |
           cd openwrt
-          make download -j8 || { echo "Failed to download packages"; exit 1; }
+          make download -j8 || { echo "下载软件包失败"; exit 1; }
           find dl -size -1024c -exec rm -f {} \;
 
-      - name: Modify 5G 25dB
+      - name: 修改 5G 25dB
         if: github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true'
         working-directory: ./openwrt
         run: |
           EEPROM_FILE=package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom/MT7981_iPAiLNA_EEPROM.bin
           EXPECTED_CONTENT=$(printf '\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B')
           if [ ! -f "$EEPROM_FILE" ]; then
-            echo "EEPROM file not found, creating new file"
+            echo "未找到 EEPROM 文件，创建新文件"
             mkdir -p "$(dirname "$EEPROM_FILE")"
             touch "$EEPROM_FILE"
           fi
           CURRENT_CONTENT=$(dd if="$EEPROM_FILE" bs=1 skip=$((0x445)) count=20 2>/dev/null || echo "")
           if [ "$CURRENT_CONTENT" != "$EXPECTED_CONTENT" ]; then
             printf '\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B\x2B' | dd of="$EEPROM_FILE" bs=1 seek=$((0x445)) conv=notrunc
-            echo "EEPROM file updated"
+            echo "EEPROM 文件已更新"
           else
-            echo "EEPROM file does not need modification"
+            echo "EEPROM 文件无需修改"
           fi
 
-      - name: Check source changes
+      - name: 检查源代码变化
         id: check_source
         run: |
           cd openwrt
@@ -241,24 +212,24 @@ jobs:
             echo "source_changed=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Compile firmware
+      - name: 编译固件
         id: compile
         timeout-minutes: 120
         run: |
           cd openwrt
           if [ "${{ steps.check_source.outputs.source_changed }}" == "false" ]; then
-            echo "No source changes, performing incremental build"
+            echo "无源代码变化，执行增量构建"
             make -j$(nproc) CCACHE=1 package/index
             make -j1 target/install
           else
-            echo "Source changes detected, performing full build"
+            echo "检测到源代码变化，执行完整构建"
             make -j$(nproc) CCACHE=1 || make -j1 V=s CCACHE=1
           fi
           echo "status=success" >> $GITHUB_OUTPUT
           echo "DEVICE_NAME=_${{ matrix.device_model }}" >> $GITHUB_ENV
           echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
 
-      - name: Upload compile logs
+      - name: 上传编译日志
         if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -268,7 +239,7 @@ jobs:
             openwrt/logs/*.log
             openwrt/*.log
 
-      - name: Extract firmware version
+      - name: 提取固件版本
         id: version
         if: steps.compile.outputs.status == 'success'
         run: |
@@ -276,35 +247,35 @@ jobs:
           VERSION_FILE=$(find bin/targets/*/*/ -type f -name "openwrt_version" 2>/dev/null | head -n 1)
           if [ -n "$VERSION_FILE" ] && [ -f "$VERSION_FILE" ]; then
             VERSION=$(cat "$VERSION_FILE")
-            echo "Extracted version from $VERSION_FILE: $VERSION"
+            echo "从 $VERSION_FILE 提取版本: $VERSION"
           else
             VERSION_FILE=$(find staging_dir/target-*/root-*/etc/ -type f -name "openwrt_version" 2>/dev/null | head -n 1)
             if [ -n "$VERSION_FILE" ] && [ -f "$VERSION_FILE" ]; then
               VERSION=$(cat "$VERSION_FILE")
-              echo "Extracted version from $VERSION_FILE: $VERSION"
+              echo "从 $VERSION_FILE 提取版本: $VERSION"
             else
               VERSION="23.05-SNAPSHOT-r$(git rev-list --count origin/$REPO_BRANCH)-$(git rev-parse --short origin/$REPO_BRANCH)"
-              echo "No openwrt_version found, using source version: $VERSION"
+              echo "未找到 openwrt_version，使用源代码版本: $VERSION"
             fi
           fi
           SAFE_VERSION=$(echo "$VERSION" | grep -o 'r[0-9]\+' || echo "r0000")
           [ -z "$SAFE_VERSION" ] && SAFE_VERSION="r0000"
-          echo "Extracted version number: $SAFE_VERSION"
+          echo "提取的版本号: $SAFE_VERSION"
           echo "FIRMWARE_VERSION=$SAFE_VERSION" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
 
-      - name: Check disk
+      - name: 检查磁盘
         if: always()
         run: df -hT
 
-      - name: Upload bin directory
+      - name: 上传 bin 目录
         uses: actions/upload-artifact@v4
         if: steps.compile.outputs.status == 'success' && github.event_name == 'workflow_dispatch' && github.event.inputs.upload_bin_dir == 'true'
         with:
           name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
           path: openwrt/bin
 
-      - name: Organize firmware and standardize filenames
+      - name: 组织固件并标准化文件名
         id: organize
         if: env.UPLOAD_FIRMWARE == 'true' && steps.compile.outputs.status == 'success'
         run: |
@@ -320,20 +291,20 @@ jobs:
           echo "FIRMWARE=$PWD" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
 
-      - name: Generate tag and release description
+      - name: 生成标签和发布描述
         id: tag
         if: env.UPLOAD_RELEASE == 'true' && steps.compile.outputs.status == 'success'
         run: |
           echo "RELEASE_TAG=ImmortalWrt-23.05-${{ matrix.device_model }}-${{ env.FIRMWARE_VERSION }}" >> $GITHUB_OUTPUT
           cat << EOF > release.txt
-          **Firmware Version**: ImmortalWrt ${{ env.FIRMWARE_VERSION }}  
-          **Device**: ${{ matrix.device_model }}  
-          **Build Time**: $(date +"%Y-%m-%d %H:%M %Z")  
-          **High Power Mode**: ${{ (github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true') && 'Enabled' || 'Disabled' }}  
+          **固件版本**: ImmortalWrt ${{ env.FIRMWARE_VERSION }}  
+          **设备**: ${{ matrix.device_model }}  
+          **构建时间**: $(date +"%Y-%m-%d %H:%M %Z")  
+          **高功率模式**: ${{ (github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true') && '已启用' || '已禁用' }}  
           EOF
           echo "status=success" >> $GITHUB_OUTPUT
 
-      - name: Publish firmware
+      - name: 发布固件
         uses: softprops/action-gh-release@v2
         if: steps.tag.outputs.status == 'success'
         env:
@@ -346,33 +317,33 @@ jobs:
             ${{ env.FIRMWARE }}/*factory.bin
           overwrite: true
 
-      - name: Check WebDAV credentials
+      - name: 检查 WebDAV 凭据
         if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
         run: |
           if [ -z "$WEBDAV_URL" ] || [ -z "$WEBDAV_USERNAME" ] || [ -z "$WEBDAV_PASSWORD" ]; then
-            echo "Error: Missing WebDAV credentials (WEBDAV_URL, WEBDAV_USERNAME, WEBDAV_PASSWORD)"
+            echo "错误：缺少 WebDAV 凭据 (WEBDAV_URL, WEBDAV_USERNAME, WEBDAV_PASSWORD)"
             exit 1
           fi
-          echo "WebDAV credentials verified"
+          echo "WebDAV 凭据已验证"
 
-      - name: Upload to WebDAV
+      - name: 上传到 WebDAV
         if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
         run: |
           SYSUPGRADE_FILES=$(find openwrt/bin/targets -type f -name "*sysupgrade.bin")
           if [ -z "$SYSUPGRADE_FILES" ]; then
-            echo "No sysupgrade.bin files found, skipping upload"
+            echo "未找到 sysupgrade.bin 文件，跳过上传"
             exit 0
           fi
           for FILE in $SYSUPGRADE_FILES; do
-            echo "Uploading file: $FILE"
+            echo "正在上传文件: $FILE"
             curl --retry 3 --retry-delay 5 -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
                  -T "$FILE" \
-                 "${{ env.WEBDAV_URL }}/${{ env.WEBDAV_PATH }}/$(basename "$FILE")" || { echo "Upload failed: $(basename "$FILE")"; exit 1; }
-            echo "Uploaded: $(basename "$FILE")"
+                 "${{ env.WEBDAV_URL }}/${{ env.WEBDAV_PATH }}/$(basename "$FILE")" || { echo "上传失败: $(basename "$FILE")"; exit 1; }
+            echo "已上传: $(basename "$FILE")"
           done
-          echo "All files uploaded successfully"
+          echo "所有文件上传成功"
 
-      - name: Clean up old Releases
+      - name: 清理旧的发布
         if: steps.tag.outputs.status == 'success'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -380,15 +351,33 @@ jobs:
           RELEASES=$(gh release list --repo ${{ github.repository }} --limit 100 --json name --jq '.[] | select(.name | test("ImmortalWrt-23.05-${{ matrix.device_model }}")) | .name' | tail -n +21)
           if [ -n "$RELEASES" ]; then
             for RELEASE in $RELEASES; do
-              gh release delete "$RELEASE" --yes || { echo "Failed to delete Release $RELEASE"; exit 1; }
+              gh release delete "$RELEASE" --yes || { echo "删除发布 $RELEASE 失败"; exit 1; }
             done
           else
-            echo "No old Releases to clean up"
+            echo "无旧发布需要清理"
           fi
 
-      - name: Clean up old workflow runs
+      - name: 清理旧的工作流运行
         if: steps.tag.outputs.status == 'success'
         uses: Mattraks/delete-workflow-runs@v2
         with:
           retain_days: 1
           keep_minimum_runs: 20
+
+      - name: 清理旧的缓存
+        if: steps.tag.outputs.status == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          CACHE_KEY_PREFIX="${{ runner.os }}-build-${{ matrix.device_model }}"
+          CACHES=$(gh api -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/actions/caches?per_page=100" \
+            --jq '.actions_caches[] | select(.key | startswith("'"$CACHE_KEY_PREFIX"'")) | .id')
+          for CACHE_ID in $CACHES; do
+            echo "正在删除缓存 ID: $CACHE_ID"
+            gh api -X DELETE \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${{ github.repository }}/actions/caches/$CACHE_ID"
+          done
+          echo "缓存清理完成"
+```
