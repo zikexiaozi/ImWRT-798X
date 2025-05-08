@@ -1,4 +1,4 @@
-name: Cleanup Old Workflow Runs
+name: 清理所有工作流运行
 
 on:
   workflow_dispatch:
@@ -27,7 +27,7 @@ jobs:
       - name: 获取所有工作流
         id: list-workflows
         run: |
-          workflows=$(gh workflow list --all --json id,name --jq '.[].id')
+          workflows=$(gh workflow list --all --json id --jq '.[].id' | jq -r '.' | tr '\n' ' ')
           echo "workflows=$workflows" >> $GITHUB_OUTPUT
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -36,7 +36,9 @@ jobs:
         run: |
           for workflow_id in ${{ steps.list-workflows.outputs.workflows }}; do
             echo "正在清理工作流 ID: $workflow_id"
-            gh run delete --repo ${{ github.repository }} --workflow $workflow_id --older-than ${{ github.event.inputs.retention_days }}d
+            gh api -X DELETE \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${{ github.repository }}/actions/workflows/$workflow_id/runs?exclude_pull_requests=true&created:<$(date -d "-${{ github.event.inputs.retention_days }} days" -Iseconds)" || true
           done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
