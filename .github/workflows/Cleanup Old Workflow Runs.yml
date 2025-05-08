@@ -1,10 +1,10 @@
-name: 清理所有工作流运行
+name: Cleanup All Workflow Runs
 
 on:
   workflow_dispatch:
     inputs:
       retention_days:
-        description: '保留工作流运行的天数'
+        description: 'Number of days to retain workflow runs'
         required: true
         default: '1'
         type: choice
@@ -21,10 +21,10 @@ jobs:
     permissions:
       actions: write
     steps:
-      - name: 检出代码
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: 获取所有工作流
+      - name: List all workflows
         id: list-workflows
         run: |
           workflows=$(gh workflow list --all --json id --jq '.[].id' | jq -r '.' | tr '\n' ' ')
@@ -32,10 +32,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 删除所有工作流的旧运行
+      - name: Delete old workflow runs
         run: |
           for workflow_id in ${{ steps.list-workflows.outputs.workflows }}; do
-            echo "正在清理工作流 ID: $workflow_id"
+            echo "Cleaning up workflow ID: $workflow_id"
             gh api -X DELETE \
               -H "Accept: application/vnd.github+json" \
               "/repos/${{ github.repository }}/actions/workflows/$workflow_id/runs?exclude_pull_requests=true&created:<$(date -d "-${{ github.event.inputs.retention_days }} days" -Iseconds)" || true
