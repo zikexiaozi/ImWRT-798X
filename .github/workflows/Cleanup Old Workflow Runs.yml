@@ -1,0 +1,26 @@
+name: Cleanup Old Workflow Runs
+
+on:
+  workflow_dispatch:
+    inputs:
+      retention_days:
+        description: 'Number of days to retain workflow runs'
+        required: true
+        default: '1'
+        type: choice
+        options:
+          - '1'
+          - '7'
+          - '14'
+          - '30'
+          - '90'
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          retain_days: ${{ github.event.inputs.retention_days }}
+          keep_minimum_runs: 1
