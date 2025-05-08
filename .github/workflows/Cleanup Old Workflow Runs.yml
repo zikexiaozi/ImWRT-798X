@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       retention_days:
-        description: 'Number of days to retain workflow runs'
+        description: '保留工作流运行的天数'
         required: true
         default: '1'
         type: choice
@@ -18,9 +18,25 @@ on:
 jobs:
   cleanup:
     runs-on: ubuntu-latest
+    permissions:
+      actions: write
     steps:
-      - name: Delete old workflow runs
-        uses: Mattraks/delete-workflow-runs@v2
-        with:
-          retain_days: ${{ github.event.inputs.retention_days }}
-          keep_minimum_runs: 1
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 获取所有工作流
+        id: list-workflows
+        run: |
+          workflows=$(gh workflow list --all --json id,name --jq '.[].id')
+          echo "workflows=$workflows" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 删除所有工作流的旧运行
+        run: |
+          for workflow_id in ${{ steps.list-workflows.outputs.workflows }}; do
+            echo "正在清理工作流 ID: $workflow_id"
+            gh run delete --repo ${{ github.repository }} --workflow $workflow_id --older-than ${{ github.event.inputs.retention_days }}d
+          done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
