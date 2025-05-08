@@ -24,21 +24,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: List all workflows
+      - name: Get list of workflows
         id: list-workflows
         run: |
-          workflows=$(gh workflow list --all --json id --jq '.[].id' | jq -r '.' | tr '\n' ' ')
-          echo "workflows=$workflows" >> $GITHUB_OUTPUT
+          workflow_ids=$(gh api -H "Accept: application/vnd.github+json" /repos/${{ github.repository }}/actions/workflows --jq '.[].id')
+          echo "workflow_ids=$workflow_ids" >> $GITHUB_OUTPUT
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Delete old workflow runs
         run: |
-          for workflow_id in ${{ steps.list-workflows.outputs.workflows }}; do
-            echo "Cleaning up workflow ID: $workflow_id"
+          for workflow_id in ${{ steps.list-workflows.outputs.workflow_ids }}; do
+            echo "Deleting runs for workflow ID: $workflow_id"
             gh api -X DELETE \
               -H "Accept: application/vnd.github+json" \
-              "/repos/${{ github.repository }}/actions/workflows/$workflow_id/runs?exclude_pull_requests=true&created:<$(date -d "-${{ github.event.inputs.retention_days }} days" -Iseconds)" || true
+              "/repos/${{ github.repository }}/actions/workflows/$workflow_id/runs?per_page=100&created:<$(date -d '-${{ github.event.inputs.retention_days }} days' -Iseconds)" || true
           done
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
