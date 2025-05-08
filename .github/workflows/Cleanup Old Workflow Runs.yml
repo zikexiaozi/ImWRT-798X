@@ -1,44 +1,14 @@
-name: Cleanup All Workflow Runs
-
-on:
-  workflow_dispatch:
-    inputs:
-      retention_days:
-        description: 'Number of days to retain workflow runs'
-        required: true
-        default: '1'
-        type: choice
-        options:
-          - '1'
-          - '7'
-          - '14'
-          - '30'
-          - '90'
-
-jobs:
-  cleanup:
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Get list of workflows
-        id: list-workflows
-        run: |
-          workflow_ids=$(gh api -H "Accept: application/vnd.github+json" /repos/${{ github.repository }}/actions/workflows --jq '.[].id')
-          echo "workflow_ids=$workflow_ids" >> $GITHUB_OUTPUT
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Delete old workflow runs
-        run: |
-          for workflow_id in ${{ steps.list-workflows.outputs.workflow_ids }}; do
-            echo "Deleting runs for workflow ID: $workflow_id"
-            gh api -X DELETE \
-              -H "Accept: application/vnd.github+json" \
-              "/repos/${{ github.repository }}/actions/workflows/$workflow_id/runs?per_page=100&created:<$(date -d '-${{ github.event.inputs.retention_days }} days' -Iseconds)" || true
-          done
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+- name: Get list of workflows
+  id: list-workflows
+  run: |
+    gh api -H "Accept: application/vnd.github+json" /repos/${{ github.repository }}/actions/workflows > workflows.json
+    echo "API Response:"
+    cat workflows.json
+    workflow_ids=$(jq '.workflows[].id' workflows.json)
+    if [ -z "$workflow_ids" ]; then
+        echo "No workflow IDs found. Please check the API response."
+        exit 1
+    fi
+    echo "workflow_ids=$workflow_ids" >> $GITHUB_OUTPUT
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
