@@ -1,0 +1,37 @@
+name: Clean Old Workflow Runs
+
+on:
+  schedule:
+    - cron: '0 * * * *' # 每小时运行一次
+  workflow_dispatch: # 支持手动触发
+
+jobs:
+  clean-old-runs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old workflow runs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          # 获取当前时间（UTC）
+          current_time=$(date -u +%s)
+          two_hours_ago=$((current_time - 7200)) # 2小时前的秒数
+
+          # 获取所有 workflow runs
+          runs=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/$REPO/actions/runs?per_page=100")
+
+          # 解析并筛选超过2小时的 runs
+          run_ids=$(echo "$runs" | jq -r --argjson threshold "$two_hours_ago" \
+            '.workflow_runs[] | select((.created_at | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) < $threshold) | .id')
+
+          # 删除旧的 workflow runs
+          for run_id in $run_ids; do
+            echo "Deleting run ID: $run_id"
+            curl -s -X DELETE \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/$REPO/actions/runs/$run_id"
+          done
