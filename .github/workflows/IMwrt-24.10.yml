@@ -405,7 +405,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          RELEASES=$(gh release list --repo ${{ github.repository }} --limit 100 --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10-${{ matrix.device_model }}")) | .name' | tail -n +21)
+          RELEASES=$(gh release list --repo ${{ github.repository }} --limit 100 --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10-${{ matrix.device_model }}")) | .name' | tail -n +1)
           if [ -n "$RELEASES" ]; then
             for RELEASE in $RELEASES; do
               gh release delete "$RELEASE" --yes || { echo "删除 Release $RELEASE 失败"; exit 1; }
@@ -419,4 +419,4 @@ jobs:
         uses: Mattraks/delete-workflow-runs@v2
         with:
           retain_days: 1
-          keep_minimum_runs: 20
+          keep_minimum_runs: 2
