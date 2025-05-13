@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4  # 使用最新版本以提高性能
+      uses: actions/checkout@v4
 
     - name: Free up disk space
       run: |
@@ -60,23 +60,29 @@ jobs:
     - name: Build firmware
       run: |
         cd immortalwrt
-        echo "Building firmware with reduced parallelism to avoid resource issues..."
+        echo "Building firmware with reduced parallelism..."
         make -j4 V=s || { echo "Build failed! Check logs above."; exit 1; }
         echo "Listing build output..."
-        find bin/targets -type f || { echo "No build output found!"; exit 1; }
+        find bin/targets -type f -name "*.bin" || { echo "No .bin files found in build output!"; exit 1; }
 
     - name: Verify build output
       run: |
         echo "Verifying build output directory..."
-        ls -l immortalwrt/bin/targets/mediatek/filogic/ || \
-          { echo "Build directory is empty or does not exist!"; exit 1; }
-        echo "Checking for factory and sysupgrade binaries..."
-        ls immortalwrt/bin/targets/mediatek/filogic/*{factory,sysupgrade}.bin || \
-          { echo "Expected firmware binaries not found!"; exit 1; }
+        if [ -d "immortalwrt/bin/targets/mediatek/filogic" ]; then
+          ls -l immortalwrt/bin/targets/mediatek/filogic/ || \
+            { echo "Failed to list build directory!"; exit 1; }
+          echo "Checking for factory and sysupgrade binaries..."
+          ls immortalwrt/bin/targets/mediatek/filogic/*{factory,sysupgrade}.bin 2>/dev/null || \
+            { echo "Expected firmware binaries not found!"; exit 1; }
+        else
+          echo "Build directory immortalwrt/bin/targets/mediatek/filogic does not exist!"
+          exit 1
+        fi
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3.1.2
+      uses: actions/upload-artifact@v4  # Upgraded to v4 to avoid v3.1.2 issues
       with:
         name: firmware
         path: immortalwrt/bin/targets/mediatek/filogic/*.bin
         if-no-files-found: error
+        retention-days: 5
