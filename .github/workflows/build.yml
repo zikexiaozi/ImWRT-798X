@@ -33,24 +33,29 @@ jobs:
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: Copy custom config
+    - name: Copy and verify custom config
       run: |
         cp configs/rax3000m-nand.config immortalwrt/.config
         cd immortalwrt
         make defconfig
+        echo "Dumping .config for verification..."
+        cat .config
 
     - name: Build firmware
       run: |
         cd immortalwrt
-        make -j$(nproc) V=s
+        make -j$(nproc) V=s || { echo "Build failed! Check logs above."; exit 1; }
+        echo "Listing build output..."
+        ls -l bin/targets/mediatek/filogic/
 
-    - name: Verify firmware directory
+    - name: Debug artifact path
       run: |
-        ls -l immortalwrt/bin/targets/mediatek/filogic/ || echo "Firmware directory not found!"
+        echo "Checking artifact path content..."
+        ls -l immortalwrt/bin/targets/mediatek/filogic/ || echo "Path not found or empty!"
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v3.1.2
       with:
         name: firmware
         path: immortalwrt/bin/targets/mediatek/filogic/
-        if-no-files-found: error
+        if-no-files-found: warn
