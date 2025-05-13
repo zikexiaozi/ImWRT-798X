@@ -49,7 +49,7 @@ jobs:
     - name: Copy and verify custom config
       run: |
         echo "Copying custom config..."
-        cp configs/rax3000m-nand.config immortalwrt/.config
+        cp rax3000m-nand.config immortalwrt/.config
         cd immortalwrt
         echo "Running make defconfig..."
         make defconfig || { echo "make defconfig failed!"; exit 1; }
