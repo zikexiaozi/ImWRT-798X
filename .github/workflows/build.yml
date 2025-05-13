@@ -44,8 +44,13 @@ jobs:
         cd immortalwrt
         make -j$(nproc) V=s
 
+    - name: Verify firmware directory
+      run: |
+        ls -l immortalwrt/bin/targets/mediatek/filogic/ || echo "Firmware directory not found!"
+
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v3.1.2
       with:
         name: firmware
         path: immortalwrt/bin/targets/mediatek/filogic/
+        if-no-files-found: error
