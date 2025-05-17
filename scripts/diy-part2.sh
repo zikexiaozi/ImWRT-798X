@@ -17,3 +17,5 @@ fi
 
 # 预装 OpenClash（根据用户需求添加）
 # echo "CONFIG_PACKAGE_luci-app-openclash=y" >> .config
+# Create symbolic link for MT7981 firmware
+ln -sf /lib/firmware/MT7981_iPAiLNA_EEPROM.bin /lib/firmware/e2p
