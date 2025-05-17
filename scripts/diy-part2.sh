@@ -6,16 +6,34 @@
 # 详细信息请参见 /LICENSE。
 #
 # https://github.com/P3TERX/Actions-OpenWrt
+
+# 确保在 openwrt 目录下操作
+cd openwrt || { echo "错误：无法进入 openwrt 目录"; exit 1; }
+
 # 修改默认 IP
 CONFIG_FILE="package/base-files/files/bin/config_generate"
-if ! grep -q "192.168.2.1" "$CONFIG_FILE"; then
-  sed -i 's/192\.168\.6\.1/192.168.2.1/g; s/192\.168\.1\.1/192.168.2.1/g' "$CONFIG_FILE"
-  echo "IP 地址已更新为 192.168.2.1"
+if [ -f "$CONFIG_FILE" ]; then
+  if ! grep -q "192.168.2.1" "$CONFIG_FILE"; then
+    sed -i 's/192\.168\.6\.1/192.168.2.1/g; s/192\.168\.1\.1/192.168.2.1/g' "$CONFIG_FILE"
+    echo "IP 地址已更新为 192.168.2.1"
+  else
+    echo "IP 地址已是 192.168.2.1，无需修改"
+  fi
 else
-  echo "IP 地址已是 192.168.2.1，无需修改"
+  echo "警告：$CONFIG_FILE 不存在，跳过 IP 修改"
 fi
 
-# 预装 OpenClash（根据用户需求添加）
+# 预装 OpenClash（已注释，保持不变）
 # echo "CONFIG_PACKAGE_luci-app-openclash=y" >> .config
-# Create symbolic link for MT7981 firmware
-ln -sf /lib/firmware/MT7981_iPAiLNA_EEPROM.bin /lib/firmware/e2p
+
+# 创建 MT7981 固件符号链接
+EEPROM_FILE="package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom/MT7981_iPAiLNA_EEPROM.bin"
+if [ -f "$EEPROM_FILE" ]; then
+  mkdir -p files/lib/firmware
+  ln -sf /lib/firmware/MT7981_iPAiLNA_EEPROM.bin files/lib/firmware/e2p
+  echo "符号链接已创建"
+  ls -l files/lib/firmware/e2p || { echo "错误：符号链接创建失败"; exit 1; }
+else
+  echo "错误：$EEPROM_FILE 不存在，无法创建符号链接"
+  exit 1
+fi
