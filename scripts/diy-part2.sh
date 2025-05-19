@@ -7,16 +7,6 @@
 #
 # https://github.com/P3TERX/Actions-OpenWrt
 
-# 验证 openwrt 目录是否存在
-if [ ! -d "openwrt" ]; then
-  echo "错误：openwrt 目录不存在，检查克隆步骤"
-  ls -la
-  exit 1
-fi
-
-# 进入 openwrt 目录
-cd openwrt || { echo "错误：无法进入 openwrt 目录"; exit 1; }
-
 # 修改默认 IP
 CONFIG_FILE="package/base-files/files/bin/config_generate"
 if [ -f "$CONFIG_FILE" ]; then
