@@ -7,7 +7,14 @@
 #
 # https://github.com/P3TERX/Actions-OpenWrt
 
-# 确保在 openwrt 目录下操作
+# 验证 openwrt 目录是否存在
+if [ ! -d "openwrt" ]; then
+  echo "错误：openwrt 目录不存在，检查克隆步骤"
+  ls -la
+  exit 1
+fi
+
+# 进入 openwrt 目录
 cd openwrt || { echo "错误：无法进入 openwrt 目录"; exit 1; }
 
 # 修改默认 IP
@@ -27,5 +34,13 @@ fi
 # echo "CONFIG_PACKAGE_luci-app-openclash=y" >> .config
 
 # 创建 MT7981 固件符号链接
-mkdir -p files/lib/firmware
-ln -sf /lib/firmware/MT7981_iPAiLNA_EEPROM.bin files/lib/firmware/e2p
+EEPROM_FILE="package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom/MT7981_iPAiLNA_EEPROM.bin"
+if [ -f "$EEPROM_FILE" ]; then
+  mkdir -p files/lib/firmware
+  ln -sf /lib/firmware/MT7981_iPAiLNA_EEPROM.bin files/lib/firmware/e2p
+  echo "符号链接已创建"
+  ls -l files/lib/firmware/e2p || { echo "错误：符号链接创建失败"; exit 1; }
+else
+  echo "错误：$EEPROM_FILE 不存在，无法创建符号链接"
+  exit 1
+fi
