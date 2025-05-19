@@ -27,13 +27,5 @@ fi
 # echo "CONFIG_PACKAGE_luci-app-openclash=y" >> .config
 
 # 创建 MT7981 固件符号链接
-EEPROM_FILE="package/mtk/drivers/mt_wifi/files/mt7981-default-eeprom/MT7981_iPAiLNA_EEPROM.bin"
-if [ -f "$EEPROM_FILE" ]; then
-  mkdir -p files/lib/firmware
-  ln -sf /lib/firmware/MT7981_iPAiLNA_EEPROM.bin files/lib/firmware/e2p
-  echo "符号链接已创建"
-  ls -l files/lib/firmware/e2p || { echo "错误：符号链接创建失败"; exit 1; }
-else
-  echo "错误：$EEPROM_FILE 不存在，无法创建符号链接"
-  exit 1
-fi
+mkdir -p files/lib/firmware
+ln -sf /lib/firmware/MT7981_iPAiLNA_EEPROM.bin files/lib/firmware/e2p
