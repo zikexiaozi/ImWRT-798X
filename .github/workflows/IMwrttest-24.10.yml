@@ -115,8 +115,15 @@ jobs:
           MIN_SPACE=10
           AVAILABLE=$(df -BG . | tail -1 | awk '{print $4}' | grep -o '[0-9]\+')
           if [ "$AVAILABLE" -lt "$MIN_SPACE" ]; then
-            echo "错误：磁盘空间不足，可用空间 ${AVAILABLE}G，需至少 ${MIN_SPACE}G"
-            exit 1
+            echo "清理磁盘空间..."
+            sudo rm -rf /var/lib/apt/lists/*
+            sudo apt-get clean
+            sudo docker image prune --all --force
+            AVAILABLE=$(df -BG . | tail -1 | awk '{print $4}' | grep -o '[0-9]\+')
+            if [ "$AVAILABLE" -lt "$MIN_SPACE" ]; then
+              echo "错误：磁盘空间不足，可用空间 ${AVAILABLE}G，需至少 ${MIN_SPACE}G"
+              exit 1
+            fi
           fi
           echo "可用磁盘空间：${AVAILABLE}G"
 
@@ -129,7 +136,7 @@ jobs:
           sudo -E apt-get -qq update
           sudo -E apt-get -qq install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
             bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib \
-            git宾文件: git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev \
+            git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev \
             libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev \
             libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 \
             python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo \
