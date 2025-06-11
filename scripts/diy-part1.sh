@@ -10,16 +10,29 @@
 # 描述: OpenWrt DIY 脚本第一部分 (更新 feeds 之前)
 #
 
-# 取消注释一个 feed 源
+# 替换 feeds.conf.default 为指定 URL 的 feeds.conf
+FEEDS_CONF_URL="https://mirrors.pku.edu.cn/immortalwrt/snapshots/packages/aarch64_cortex-a53/feeds.conf"
+
+# 下载新的 feeds.conf 文件
+echo "正在下载 feeds.conf 从 ${FEEDS_CONF_URL}..."
+if curl -s -o feeds.conf.default "${FEEDS_CONF_URL}"; then
+  echo "feeds.conf.default 已成功下载并替换"
+else
+  echo "错误：无法下载 feeds.conf 从 ${FEEDS_CONF_URL}"
+  exit 1
+fi
+
+# 检查 feeds.conf.default 是否存在
+if [ -f feeds.conf.default ]; then
+  echo "feeds.conf.default 已存在"
+else
+  echo "错误：feeds.conf.default 未找到"
+  exit 1
+fi
+
+# 取消注释一个 feed 源（可选，根据需要启用）
 #sed -i 's/^#\(.*helloworld\)/\1/' feeds.conf.default
 
-# 添加一个 feed 源
+# 添加一个 feed 源（可选，根据需要启用）
 #echo 'src-git helloworld https://github.com/fw876/helloworld' >>feeds.conf.default
 #echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.conf.default
-
-# 检查 feeds.conf.default 是否变更
-if [ -f feeds.conf.default ]; then
-  echo "feeds.conf.default 已存在，无需修改"
-else
-  echo "未找到 feeds.conf.default，将使用默认配置"
-fi
