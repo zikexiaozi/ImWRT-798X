@@ -30,9 +30,25 @@ else
   exit 1
 fi
 
-# 取消注释一个 feed 源（可选，根据需要启用）
-#sed -i 's/^#\(.*helloworld\)/\1/' feeds.conf.default
+# 创建自定义 distfeeds.conf 文件
+CUSTOM_DISTFEEDS_CONF="files/etc/opkg/distfeeds.conf"
 
-# 添加一个 feed 源（可选，根据需要启用）
-#echo 'src-git helloworld https://github.com/fw876/helloworld' >>feeds.conf.default
-#echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.conf.default
+# 确保 files/etc/opkg/ 目录存在
+mkdir -p files/etc/opkg/
+
+# 写入自定义 distfeeds.conf 内容
+cat << EOF > "${CUSTOM_DISTFEEDS_CONF}"
+src/gz immortalwrt_base https://mirrors.vsean.net/openwrt/releases/24.10-SNAPSHOT/packages/aarch64_cortex-a53/base
+src/gz immortalwrt_luci https://mirrors.vsean.net/openwrt/releases/24.10-SNAPSHOT/packages/aarch64_cortex-a53/luci
+src/gz immortalwrt_packages https://mirrors.vsean.net/openwrt/releases/24.10-SNAPSHOT/packages/aarch64_cortex-a53/packages
+src/gz immortalwrt_routing https://mirrors.vsean.net/openwrt/releases/24.10-SNAPSHOT/packages/aarch64_cortex-a53/routing
+src/gz immortalwrt_telephony https://mirrors.vsean.net/openwrt/releases/24.10-SNAPSHOT/packages/aarch64_cortex-a53/telephony
+EOF
+
+# 检查是否成功创建 distfeeds.conf
+if [ -f "${CUSTOM_DISTFEEDS_CONF}" ]; then
+  echo "自定义 distfeeds.conf 已成功创建在 ${CUSTOM_DISTFEEDS_CONF}"
+else
+  echo "错误：无法创建 distfeeds.conf"
+  exit 1
+fi
