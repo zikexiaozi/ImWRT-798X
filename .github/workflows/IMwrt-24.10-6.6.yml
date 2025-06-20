@@ -45,7 +45,7 @@ on:
         description: '源仓库分支'
         default: 'openwrt-24.10-6.6'
   schedule:
-    - cron: '30 14 * * *'  # test
+    - cron: '0 7 * * 5'  # 每周五 UTC 时间 07:00 运行（北京时间 15:00）
 
 permissions:
   contents: write
@@ -64,6 +64,7 @@ env:
   WEBDAV_URL: ${{ secrets.WEBDAV_URL }}
   WEBDAV_USERNAME: ${{ secrets.WEBDAV_USERNAME }}
   WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
+  ENABLE_5G_25DB: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.enable_5g_25db || secrets.ENABLE_5G_25DB || 'true' }}
 
 jobs:
   check-source-updates:
@@ -114,14 +115,14 @@ jobs:
     name: 编译 ${{ matrix.device_model }}
     strategy:
       matrix:
-        device_model: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.device_model && fromJSON(format('["{0}"]', github.event.inputs.device_model)) || fromJSON('["abt_asr3000", "cetron_ct3003", "cmcc_a10", "cmcc_rax3000m", "cmcc_rax3000m-emmc", "cmcc_rax3000m-emmc-usboffload", "cmcc_rax3000m-usboffload", "cmcc_rax3000me", "cmcc_xr30", "cmcc_xr30-emmc"]') }}
-      max-parallel: 2
+        device_model: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.device_model && fromJSON(format('["{0}"]', github.event.inputs.device_model)) || fromJSON('["cmcc_rax3000m", "cmcc_rax3000m-emmc", "huasifei_wh3000-emmc", "abt_asr3000", "cetron_ct3003", "cmcc_a10", "h3c_nx30pro", "imou_lc-hx3001", "jcg_q30", "konka_komi-a31", "livinet_zr-3020", "mt7981-360-t7-108M", "mt7981-clt-r30b1", "mt7981-clt-r30b1-112M", "xiaomi_mi-router-ax3000t", "xiaomi_mi-router-ax3000t-stock", "xiaomi_mi-router-wr30u-112m", "xiaomi_mi-router-wr30u-stock"]') }}
+      max-parallel: 18
     steps:
       - name: 调试信息
         run: |
           echo "触发方式: ${{ github.event_name }}"
           echo "设备型号: ${{ matrix.device_model }}"
-          echo "5G 25dB: ${{ github.event.inputs.enable_5g_25db }}"
+          echo "5G 25dB: ${{ env.ENABLE_5G_25DB }}"
           echo "上传 bin 目录: ${{ github.event.inputs.upload_bin_dir }}"
 
       - name: 检出代码
@@ -158,7 +159,7 @@ jobs:
           sudo chown $USER:$GROUPS /workdir
 
       - name: 缓存 ccache
-        if: github.event_name == 'workflow_dispatch'  # 仅在手动触发时使用缓存
+        if: github.event_name == 'workflow_dispatch'
         uses: actions/cache@v4
         with:
           path: ~/.ccache
@@ -236,7 +237,7 @@ jobs:
           find dl -size -1024c -exec rm -f {} \;
 
       - name: 修改 5G 25dB
-        if: github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true'
+        if: env.ENABLE_5G_25DB == 'true'
         working-directory: ./openwrt
         run: |
           EEPROM_FILE=$(find package -name MT7981_iPAiLNA_EEPROM.bin 2>/dev/null | head -n 1)
@@ -326,7 +327,7 @@ jobs:
           for file in *sysupgrade.bin *factory.bin; do
             if [ -f "$file" ]; then
               TYPE=$(echo "$file" | grep -o "sysupgrade\|factory")
-              NEW_NAME="${{ matrix.device_model }}_25dB-${{ (github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true') && 'on' || 'off' }}_${{ env.FIRMWARE_VERSION }}${{ env.FILE_DATE }}_${TYPE}.bin"
+              NEW_NAME="${{ matrix.device_model }}_25dB-${{ env.ENABLE_5G_25DB == 'true' && 'on' || 'off' }}_${{ env.FIRMWARE_VERSION }}${{ env.FILE_DATE }}_${TYPE}.bin"
               mv "$file" "$NEW_NAME"
             fi
           done
@@ -344,7 +345,7 @@ jobs:
           **固件版本**: ImmortalWrt ${{ env.FIRMWARE_VERSION }}  
           **设备**: ${{ matrix.device_model }}  
           **编译时间**: $(date +"%Y-%m-%d %H:%M %Z")  
-          **高功率模式**: ${{ (github.event_name != 'workflow_dispatch' || github.event.inputs.enable_5g_25db == 'true') && '已启用' || '未启用' }}  
+          **高功率模式**: ${{ env.ENABLE_5G_25DB == 'true' && '已启用' || '未启用' }}  
           EOF
           echo "status=success" >> $GITHUB_OUTPUT
 
@@ -374,13 +375,13 @@ jobs:
         if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
         run: |
           set -e
-          echo "开始查找并上传 sysupgrade.bin 文件到 WebDAV..."
-          SYSUPGRADE_FILES=$(find openwrt/bin/targets -type f -name "*sysupgrade.bin")
-          if [ -z "$SYSUPGRADE_FILES" ]; then
-            echo "未找到 sysupgrade.bin 文件，跳过上传"
+          echo "开始查找并上传 sysupgrade.bin 和 factory.bin 文件到 WebDAV..."
+          FIRMWARE_FILES=$(find openwrt/bin/targets -type f -name "*.bin")
+          if [ -z "$FIRMWARE_FILES" ]; then
+            echo "未找到 sysupgrade.bin 或 factory.bin 文件，跳过上传"
             exit 0
           fi
-          for FILE in $SYSUPGRADE_FILES; do
+          for FILE in $FIRMWARE_FILES; do
             NEW_NAME="$(basename "$FILE" | sed "s/\.bin/${{ env.FILE_DATE }}.bin/")"
             echo "正在上传文件: $NEW_NAME"
             curl --retry 3 --retry-delay 5 -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
