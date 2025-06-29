@@ -33,7 +33,7 @@ on:
         type: boolean
         required: true
         default: true
-      upload_bin_dir:
+      upload_bin_dir:  # Consider implementing or removing this input
         description: '上传 bin 目录'
         type: boolean
         required: false
@@ -75,6 +75,12 @@ jobs:
       - name: 检出本仓库代码
         uses: actions/checkout@v4
 
+      - name: 下载上次检查的 SHA
+        uses: actions/download-artifact@v4
+        with:
+          name: last-checked-sha
+        continue-on-error: true  # Continue if artifact doesn't exist (first run)
+
       - name: 安装 GitHub CLI
         run: |
           sudo apt-get update
@@ -82,9 +88,12 @@ jobs:
 
       - name: 检查源仓库更新
         id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Ensure token is available for gh
         run: |
-          LATEST_SHA=$(curl -s -f -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/padavanonly/immortalwrt-mt798x-24.10/commits/$REPO_BRANCH" | jq -r '.sha' || echo "")
+          LATEST_SHA=$(curl -s -f -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/padavanonly/immortalwrt-mt798x-24.10/commits/${{ env.REPO_BRANCH }}" | jq -r '.sha' || echo "")
           if [ -z "$LATEST_SHA" ]; then
             echo "无法获取最新 SHA，跳过编译"
             echo "should_build=false" >> $GITHUB_OUTPUT
@@ -150,7 +159,7 @@ jobs:
             ninja-build python3 python3-pyelftools rsync unzip vim wget zlib1g-dev
           sudo apt-get autoremove --purge
           sudo apt-get clean
-          sudo timedatectl set-timezone "$TZ"
+          sudo timedatectl set-timezone "$TZ" || echo "Warning: Failed to set timezone"
           sudo mkdir -p /workdir
           sudo chown $USER:$GROUPS /workdir
 
@@ -182,11 +191,22 @@ jobs:
           fi
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
+      - name: 验证脚本文件
+        run: |
+          if [ ! -f "$DIY_P1_SH" ]; then
+            echo "错误：未找到 $DIY_P1_SH"
+            exit 1
+          fi
+          if [ ! -f "$DIY_P2_SH" ]; then
+            echo "错误：未找到 $DIY_P2_SH"
+            exit 1
+          fi
+          chmod +x $DIY_P1_SH $DIY_P2_SH
+
       - name: 加载 Feeds
         timeout-minutes: 10
         run: |
           [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
-          chmod +x $DIY_P1_SH
           cd openwrt
           $GITHUB_WORKSPACE/$DIY_P1_SH
 
@@ -202,7 +222,6 @@ jobs:
           [ -e files ] && mv files openwrt/files
           [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
           echo "CONFIG_TARGET_mediatek_filogic_DEVICE_${{ matrix.device_model }}=y" >> openwrt/.config
-          chmod +x $DIY_P2_SH
           cd openwrt
           $GITHUB_WORKSPACE/$DIY_P2_SH
           make defconfig
@@ -212,7 +231,7 @@ jobs:
         run: |
           cd openwrt
           make download -j8 || { echo "下载软件包失败"; exit 1; }
-          find dl -size -1024c -exec rm -f {} \;
+          find dl -size -1024c -exec rm -f {} \; || echo "Warning: Failed to clean small files in dl directory"
 
       - name: 修改 5G 25dB
         if: env.ENABLE_5G_25DB == 'true'
@@ -238,7 +257,7 @@ jobs:
         run: |
           set -e
           cd openwrt
-          make -j$(nproc) || make -j4 || make -j1 V=s
+          make -j$(nproc) V=s || make -j4 V=s || make -j1 V=s
           echo "status=success" >> $GITHUB_OUTPUT
           echo "DEVICE_NAME=_${{ matrix.device_model }}" >> $GITHUB_ENV
           echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
@@ -310,38 +329,52 @@ jobs:
             ${{ env.FIRMWARE }}/*factory*.*
           overwrite: true
 
+      - name: 验证 WebDAV 环境变量
+        if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
+        run: |
+          if [ -z "${{ env.WEBDAV_URL }}" ] || [ -z "${{ env.WEBDAV_USERNAME }}" ] || [ -z "${{ env.WEBDAV_PASSWORD }}" ]; then
+            echo "错误：WebDAV 环境变量未正确配置"
+            exit 1
+          fi
+          echo "WebDAV 环境变量验证通过"
+
       - name: 上传到 WebDAV
-  if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
-  env:
-    FILE_DATE: $(date +%Y%m%d)
-  run: |
-    set -e
-    echo "正在查找固件文件..."
-    FIRMWARE_FILES=$(find openwrt/bin/targets -type f \( -name "*sysupgrade*.*" -o -name "*factory*.*" \) ! -name "*-bl2*")
-    if [ -z "$FIRMWARE_FILES" ]; then
-      echo "未找到固件文件，跳过上传"
-      exit 0
-    fi
-    echo "找到文件: $FIRMWARE_FILES"
-    for FILE in $FIRMWARE_FILES; do
-      NEW_NAME="$(basename "$FILE" | sed "s/\.\([^.]*\)$/-${{ env.FILE_DATE }}.\1/")"
-      echo "上传: $FILE → $NEW_NAME"
-      curl --retry 3 --retry-delay 5 -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
-           -T "$FILE" \
-           "${{ env.WEBDAV_URL }}/$NEW_NAME" || { echo "上传失败: $NEW_NAME"; exit 1; }
-    done
-    echo "上传完成！"
-    
+        if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
+        env:
+          FILE_DATE: $(date +%Y%m%d)
+        run: |
+          set -e
+          echo "正在查找固件文件..."
+          FIRMWARE_FILES=$(find openwrt/bin/targets -type f \( -name "*sysupgrade*.*" -o -name "*factory*.*" \) ! -name "*-bl2*")
+          if [ -z "$FIRMWARE_FILES" ]; then
+            echo "未找到固件文件，跳过上传"
+            exit 0
+          fi
+          echo "找到文件: $FIRMWARE_FILES"
+          for FILE in $FIRMWARE_FILES; do
+            NEW_NAME="$(basename "$FILE" | sed "s/\.\([^.]*\)$/-${{ env.FILE_DATE }}.\1/")"
+            echo "上传: $FILE → $NEW_NAME"
+            RESPONSE=$(curl --retry 3 --retry-delay 5 -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
+                   -T "$FILE" \
+                   "${{ env.WEBDAV_URL }}/$NEW_NAME" -w "%{http_code}" -o /dev/null)
+            if [ "$RESPONSE" -ne 201 ] && [ "$RESPONSE" -ne 204 ]; then
+              echo "上传失败: $NEW_NAME (HTTP 状态码: $RESPONSE)"
+              exit 1
+            fi
+            echo "上传成功: $NEW_NAME"
+          done
+          echo "上传完成！"
+
       - name: 清理旧 Releases
         if: steps.tag.outputs.status == 'success'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release list --repo ${{ github.repository }} --limit 100 --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10-${{ matrix.device_model }}")) | .name' | tail -n +1 | xargs -I {} gh release delete {} --yes || true
+          gh release list --repo ${{ github.repository }} --limit 100 --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10-${{ matrix.device_model }}")) | .name' | tail -n +3 | xargs -I {} gh release delete {} --yes || true
 
       - name: 清理旧工作流运行
         if: steps.tag.outputs.status == 'success'
         uses: Mattraks/delete-workflow-runs@v2
         with:
-          retain_days: 7
-          keep_minimum_runs: 2
+          retain_days: 14  # Increased to retain more history
+          keep_minimum_runs: 5  # Increased to keep more runs
