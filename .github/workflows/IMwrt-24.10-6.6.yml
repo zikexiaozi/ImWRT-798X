@@ -112,10 +112,9 @@ jobs:
     needs: check-source-updates
     if: github.event_name == 'workflow_dispatch' || needs.check-source-updates.outputs.should_build == 'true'
     runs-on: ubuntu-22.04
-    name: 编译 ${{ matrix.device_model }}
     strategy:
       matrix:
-        device_model: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.device_model && fromJSON(format('["{0}"]', github.event.inputs.device_model)) || fromJSON('["cmcc_rax3000m", "cmcc_rax3000m-emmc", "huasifei_wh3000-emmc", "abt_asr3000", "cetron_ct3003", "cmcc_a10", "h3c_nx30pro", "imou_lc-hx3001", "jcg_q30", "konka_komi-a31", "livinet_zr-3020", "mt7981-360-t7-108M", "mt7981-clt-r30b1", "mt7981-clt-r30b1-112M", "xiaomi_mi-router-ax3000t", "xiaomi_mi-router-ax3000t-stock", "xiaomi_mi-router-wr30u-112m", "xiaomi_mi-router-wr30u-stock"]') }}
+        device_model: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', github.event.inputs.device_model)) || fromJSON('["cmcc_rax3000m", "cmcc_rax3000m-emmc", "huasifei_wh3000-emmc", "abt_asr3000", "cetron_ct3003", "cmcc_a10", "h3c_nx30pro", "imou_lc-hx3001", "jcg_q30", "konka_komi-a31", "livinet_zr-3020", "mt7981-360-t7-108M", "mt7981-clt-r30b1", "mt7981-clt-r30b1-112M", "xiaomi_mi-router-ax3000t", "xiaomi_mi-router-ax3000t-stock", "xiaomi_mi-router-wr30u-112m", "xiaomi_mi-router-wr30u-stock"]') }}
       max-parallel: 18
     steps:
       - name: 调试信息
@@ -142,29 +141,18 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          [ -d /usr/share/dotnet ] && sudo rm -rf /usr/share/dotnet
-          [ -d /usr/local/lib/android ] && sudo rm -rf /usr/local/lib/android
-          [ -d /opt/ghc ] && sudo rm -rf /opt/ghc
-          [ -d /opt/hostedtoolcache/CodeQL ] && sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force
-          sudo -E apt-get -qq update
-          sudo -E apt-get -qq install -y build-essential ccache cmake curl git gawk gcc-multilib g++-multilib \
+          sudo apt-get update
+          sudo apt-get install -y build-essential ccache cmake curl git gawk gcc-multilib g++-multilib \
             libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev \
             libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool \
             ninja-build python3 python3-pyelftools rsync unzip vim wget zlib1g-dev
-          sudo -E apt-get -qq autoremove --purge
-          sudo -E apt-get -qq clean
+          sudo apt-get autoremove --purge
+          sudo apt-get clean
           sudo timedatectl set-timezone "$TZ"
           sudo mkdir -p /workdir
           sudo chown $USER:$GROUPS /workdir
-
-      - name: 缓存 ccache
-        if: github.event_name == 'workflow_dispatch'
-        uses: actions/cache@v4
-        with:
-          path: ~/.ccache
-          key: ${{ runner.os }}-ccache-${{ matrix.device_model }}-${{ hashFiles('openwrt/.config', 'feeds.conf.default') }}
-          restore-keys: ${{ runner.os }}-ccache-${{ matrix.device_model }}-
 
       - name: 配置 ccache
         run: |
@@ -194,15 +182,6 @@ jobs:
           fi
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-      - name: 检查 Feeds 配置变更
-        id: check_feeds
-        run: |
-          if [ -f openwrt/feeds.conf.default ] && cmp -s openwrt/feeds.conf.default $FEEDS_CONF; then
-            echo "feeds_unchanged=true" >> $GITHUB_OUTPUT
-          else
-            echo "feeds_unchanged=false" >> $GITHUB_OUTPUT
-          fi
-
       - name: 加载 Feeds
         timeout-minutes: 10
         run: |
@@ -229,7 +208,6 @@ jobs:
           make defconfig
 
       - name: 下载软件包
-        id: package
         timeout-minutes: 30
         run: |
           cd openwrt
@@ -254,32 +232,13 @@ jobs:
             echo "EEPROM 文件无需修改: $EEPROM_FILE"
           fi
 
-      - name: 检查源码变更
-        id: check_source
-        run: |
-          cd openwrt
-          git fetch origin $REPO_BRANCH
-          git reset --hard origin/$REPO_BRANCH
-          if git diff --name-only HEAD^ HEAD | grep -E '^(package/|target/)'; then
-            echo "source_changed=true" >> $GITHUB_OUTPUT
-          else
-            echo "source_changed=false" >> $GITHUB_OUTPUT
-          fi
-
       - name: 编译固件
         id: compile
         timeout-minutes: 180
         run: |
           set -e
           cd openwrt
-          if [ "${{ steps.check_source.outputs.source_changed }}" == "false" ]; then
-            echo "无源码变更，执行增量编译"
-            make -j$(nproc) CCACHE=1 package/index
-            make -j1 target/install
-          else
-            echo "检测到源码变更，执行完整编译"
-            make -j$(nproc) CCACHE=1 || make -j4 CCACHE=1 || make -j1 V=s CCACHE=1
-          fi
+          make -j$(nproc) || make -j4 || make -j1 V=s
           echo "status=success" >> $GITHUB_OUTPUT
           echo "DEVICE_NAME=_${{ matrix.device_model }}" >> $GITHUB_ENV
           echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
@@ -304,18 +263,6 @@ jobs:
           echo "提取的版本号: $SAFE_VERSION"
           echo "FIRMWARE_VERSION=$SAFE_VERSION" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
-
-      - name: 检查磁盘
-        if: always()
-        run: |
-          df -hT
-
-      - name: 上传 bin
-        uses: actions/upload-artifact@v4
-        if: steps.compile.outputs.status == 'success' && github.event_name == 'workflow_dispatch' && github.event.inputs.upload_bin_dir == 'true'
-        with:
-          name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-          path: openwrt/bin
 
       - name: 整理固件并固定文件名
         id: organize
@@ -365,48 +312,28 @@ jobs:
             ${{ env.FIRMWARE }}/*factory.itb
           overwrite: true
 
-      - name: 检查 WebDAV 凭证
-        if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
-        run: |
-          if [ -z "$WEBDAV_URL" ] || [ -z "$WEBDAV_USERNAME" ] || [ -z "$WEBDAV_PASSWORD" ]; then
-            echo "错误：缺少 WebDAV 凭证 (WEBDAV_URL, WEBDAV_USERNAME, WEBDAV_PASSWORD)"
-            exit 1
-          fi
-          echo "WebDAV 凭证检查通过"
-
       - name: 上传到 WebDAV
         if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
         run: |
           set -e
-          echo "开始查找并上传 sysupgrade.bin, factory.bin, sysupgrade.itb, factory.itb 文件到 WebDAV..."
           FIRMWARE_FILES=$(find openwrt/bin/targets -type f \( -name "*.bin" -o -name "*.itb" \))
           if [ -z "$FIRMWARE_FILES" ]; then
-            echo "未找到 sysupgrade.bin, factory.bin, sysupgrade.itb 或 factory.itb 文件，跳过上传"
+            echo "未找到固件文件，跳过上传"
             exit 0
           fi
           for FILE in $FIRMWARE_FILES; do
             NEW_NAME="$(basename "$FILE" | sed "s/\.\(bin\|itb\)$/${{ env.FILE_DATE }}.\1/")"
-            echo "正在上传文件: $NEW_NAME"
             curl --retry 3 --retry-delay 5 -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
                  -T "$FILE" \
                  "${{ env.WEBDAV_URL }}/$NEW_NAME" || { echo "上传失败: $NEW_NAME"; exit 1; }
-            echo "上传成功: $NEW_NAME"
           done
-          echo "所有文件上传完成。"
 
       - name: 清理旧 Releases
         if: steps.tag.outputs.status == 'success'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          RELEASES=$(gh release list --repo ${{ github.repository }} --limit 100 --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10-${{ matrix.device_model }}")) | .name' | tail -n +1)
-          if [ -n "$RELEASES" ]; then
-            for RELEASE in $RELEASES; do
-              gh release delete "$RELEASE" --yes || { echo "删除 Release $RELEASE 失败"; exit 1; }
-            done
-          else
-            echo "无需清理旧 Releases"
-          fi
+          gh release list --repo ${{ github.repository }} --limit 100 --json name --jq '.[] | select(.name | test("ImmortalWrt-24.10-${{ matrix.device_model }}")) | .name' | tail -n +1 | xargs -I {} gh release delete {} --yes || true
 
       - name: 清理旧工作流运行
         if: steps.tag.outputs.status == 'success'
