@@ -311,21 +311,27 @@ jobs:
           overwrite: true
 
       - name: 上传到 WebDAV
-        if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
-        run: |
-          set -e
-          FIRMWARE_FILES=$(find openwrt/bin/targets -type f \( -name "*sysupgrade*.*" -o -name "*factory*.*" \) ! -name "*-bl2*")
-          if [ -z "$FIRMWARE_FILES" ]; then
-            echo "未找到固件文件，跳过上传"
-            exit 0
-          fi
-          for FILE in $FIRMWARE_FILES; do
-            NEW_NAME="$(basename "$FILE" | sed "s/\.\([^.]*\)$/${{ env.FILE_DATE }}.\1/")"
-            curl --retry 3 --retry-delay 5 -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
-                 -T "$FILE" \
-                 "${{ env.WEBDAV_URL }}/$NEW_NAME" || { echo "上传失败: $NEW_NAME"; exit 1; }
-          done
-
+  if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
+  env:
+    FILE_DATE: $(date +%Y%m%d)
+  run: |
+    set -e
+    echo "正在查找固件文件..."
+    FIRMWARE_FILES=$(find openwrt/bin/targets -type f \( -name "*sysupgrade*.*" -o -name "*factory*.*" \) ! -name "*-bl2*")
+    if [ -z "$FIRMWARE_FILES" ]; then
+      echo "未找到固件文件，跳过上传"
+      exit 0
+    fi
+    echo "找到文件: $FIRMWARE_FILES"
+    for FILE in $FIRMWARE_FILES; do
+      NEW_NAME="$(basename "$FILE" | sed "s/\.\([^.]*\)$/-${{ env.FILE_DATE }}.\1/")"
+      echo "上传: $FILE → $NEW_NAME"
+      curl --retry 3 --retry-delay 5 -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
+           -T "$FILE" \
+           "${{ env.WEBDAV_URL }}/$NEW_NAME" || { echo "上传失败: $NEW_NAME"; exit 1; }
+    done
+    echo "上传完成！"
+    
       - name: 清理旧 Releases
         if: steps.tag.outputs.status == 'success'
         env:
