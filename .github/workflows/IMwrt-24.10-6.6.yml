@@ -201,7 +201,7 @@ jobs:
         run: |
           [ -e files ] && mv files openwrt/files
           [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-          echo "CONFIG_TARGET_mediatek_mt7981_DEVICE_${{ matrix.device_model }}=y" >> openwrt/.config
+          echo "CONFIG_TARGET_mediatek_filogic_DEVICE_${{ matrix.device_model }}=y" >> openwrt/.config
           chmod +x $DIY_P2_SH
           cd openwrt
           $GITHUB_WORKSPACE/$DIY_P2_SH
@@ -271,10 +271,10 @@ jobs:
           set -e
           cd openwrt/bin/targets/*/*
           rm -rf packages
-          for file in *sysupgrade.bin *factory.bin *sysupgrade.itb *factory.itb; do
-            if [ -f "$file" ]; then
+          for file in *sysupgrade* *factory*; do
+            if [ -f "$file" ] && ! echo "$file" | grep -q "-bl2"; then
               TYPE=$(echo "$file" | grep -o "sysupgrade\|factory")
-              EXT=$(echo "$file" | grep -o "bin\|itb")
+              EXT="${file##*.}"
               NEW_NAME="${{ matrix.device_model }}_25dB-${{ env.ENABLE_5G_25DB == 'true' && 'on' || 'off' }}_${{ env.FIRMWARE_VERSION }}${{ env.FILE_DATE }}_${TYPE}.${EXT}"
               mv "$file" "$NEW_NAME"
             fi
@@ -306,23 +306,21 @@ jobs:
           tag_name: ${{ steps.tag.outputs.RELEASE_TAG }}
           body_path: release.txt
           files: |
-            ${{ env.FIRMWARE }}/*sysupgrade.bin
-            ${{ env.FIRMWARE }}/*factory.bin
-            ${{ env.FIRMWARE }}/*sysupgrade.itb
-            ${{ env.FIRMWARE }}/*factory.itb
+            ${{ env.FIRMWARE }}/*sysupgrade*.*
+            ${{ env.FIRMWARE }}/*factory*.*
           overwrite: true
 
       - name: 上传到 WebDAV
         if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
         run: |
           set -e
-          FIRMWARE_FILES=$(find openwrt/bin/targets -type f \( -name "*.bin" -o -name "*.itb" \))
+          FIRMWARE_FILES=$(find openwrt/bin/targets -type f \( -name "*sysupgrade*.*" -o -name "*factory*.*" \) ! -name "*-bl2*")
           if [ -z "$FIRMWARE_FILES" ]; then
             echo "未找到固件文件，跳过上传"
             exit 0
           fi
           for FILE in $FIRMWARE_FILES; do
-            NEW_NAME="$(basename "$FILE" | sed "s/\.\(bin\|itb\)$/${{ env.FILE_DATE }}.\1/")"
+            NEW_NAME="$(basename "$FILE" | sed "s/\.\([^.]*\)$/${{ env.FILE_DATE }}.\1/")"
             curl --retry 3 --retry-delay 5 -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
                  -T "$FILE" \
                  "${{ env.WEBDAV_URL }}/$NEW_NAME" || { echo "上传失败: $NEW_NAME"; exit 1; }
