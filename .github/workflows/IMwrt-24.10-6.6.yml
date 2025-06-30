@@ -277,7 +277,7 @@ jobs:
         if: steps.compile.outputs.status == 'success'
         run: |
           cd openwrt
-          VERSION=$(git rev-parse --short HEAD || echo "unknown")
+          VERSION=$(git rev-parse --short HEAD | cut -d'-' -f1 || echo "unknown")
           SAFE_VERSION="r${VERSION}"
           echo "提取的版本号: $SAFE_VERSION"
           echo "FIRMWARE_VERSION=$SAFE_VERSION" >> $GITHUB_ENV
