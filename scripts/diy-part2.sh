@@ -21,14 +21,13 @@ else
 fi
 
 # 预装 OpenClash（已注释，保持不变）
-echo "CONFIG_PACKAGE_luci-app-openclash=y" >> .config
 # echo "CONFIG_PACKAGE_luci-app-openclash=y" >> .config
 
 #删除原默认主题
-rm -rf package/lean/luci-theme-bootstrap
-rm -rf package/lean/luci-theme-material
-rm -rf package/lean/luci-app-privoxy
-rm -rf package/lean/luci-theme-ifit
+#rm -rf package/lean/luci-theme-bootstrap
+#rm -rf package/lean/luci-theme-material
+#rm -rf package/lean/luci-app-privoxy
+#rm -rf package/lean/luci-theme-ifit
 
 #取消原主题luci-theme-bootstrap为默认主题
 sed -i '/set luci.main.mediaurlbase=\/luci-static\/bootstrap/d' feeds/luci/themes/luci-theme-bootstrap/root/etc/uci-defaults/30_luci-theme-bootstrap
