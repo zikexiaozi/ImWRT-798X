@@ -29,18 +29,17 @@ echo "CONFIG_PACKAGE_luci-app-openclash=y" >> .config
 # echo "CONFIG_PACKAGE_luci-app-openclash=y" >> .config
 
 #删除原默认主题
-#rm -rf package/lean/luci-theme-argon
-#rm -rf package/lean/luci-theme-bootstrap
-#rm -rf package/lean/luci-theme-material
-#rm -rf package/lean/luci-app-privoxy
-#rm -rf package/lean/luci-theme-ifit
+rm -rf package/lean/luci-theme-bootstrap
+rm -rf package/lean/luci-theme-material
+rm -rf package/lean/luci-app-privoxy
+rm -rf package/lean/luci-theme-ifit
 
 #取消原主题luci-theme-bootstrap为默认主题
 sed -i '/set luci.main.mediaurlbase=\/luci-static\/bootstrap/d' feeds/luci/themes/luci-theme-bootstrap/root/etc/uci-defaults/30_luci-theme-bootstrap
 
 # 修改 luci-theme-netgear 为默认主题,可根据你喜欢的修改成其他的（不选择那些会自动改变为默认主题的主题才有效果）
 #sed -i 's/luci-theme-bootstrap/luci-theme-ifit/g' feeds/luci/collections/luci/Makefile
-sed -i 's/luci-theme-bootstrap/luci-theme-kucat/g' ./feeds/luci/collections/luci/Makefile
+sed -i 's/luci-theme-bootstrap/luci-theme-argon/g' ./feeds/luci/collections/luci/Makefile
 
 # 设置密码为空（安装固件时无需密码登陆，然后自己修改想要的密码）
 #sed -i 's@.*CYXluq4wUazHjmCDBCqXF*@#&@g' package/lean/default-settings/files/zzz-default-settings
