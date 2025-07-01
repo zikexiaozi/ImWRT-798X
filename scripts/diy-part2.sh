@@ -20,10 +20,6 @@ else
   echo "警告：$CONFIG_FILE 不存在，跳过 IP 修改"
 fi
 
-# 自定议源（已注释，保持不变）
-sed -i '$a src-git smpackage https://github.com/kenzok8/small-package' feeds.conf.default
-echo "自定议源修改成功"
-
 # 预装 OpenClash（已注释，保持不变）
 echo "CONFIG_PACKAGE_luci-app-openclash=y" >> .config
 # echo "CONFIG_PACKAGE_luci-app-openclash=y" >> .config
