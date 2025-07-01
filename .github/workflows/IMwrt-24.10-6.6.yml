@@ -10,9 +10,7 @@ on:
         type: choice
         required: true
         options:
-          - cmcc_rax3000m
           - cmcc_rax3000m-emmc
-          - huasifei_wh3000-emmc
       enable_5g_25db:
         description: '启用 5G 25dB 修改'
         type: boolean
@@ -192,8 +190,6 @@ jobs:
         timeout-minutes: 10
         run: |
           [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
-          cd openwrt
-          $GITHUB_WORKSPACE/$DIY_P1_SH
 
       - name: 更新 Feeds
         timeout-minutes: 30
@@ -313,43 +309,7 @@ jobs:
             ${{ env.FIRMWARE }}/*sysupgrade*.*
             ${{ env.FIRMWARE }}/*factory*.*
           overwrite: true
-
-      - name: 验证 WebDAV 环境变量
-        if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
-        run: |
-          if [ -z "${{ env.WEBDAV_URL }}" ] || [ -z "${{ env.WEBDAV_USERNAME }}" ] || [ -z "${{ env.WEBDAV_PASSWORD }}" ]; then
-            echo "错误：WebDAV 环境变量未正确配置"
-            exit 1
-          fi
-          echo "WebDAV 环境变量验证通过"
-
-      - name: 上传到 WebDAV
-        if: steps.compile.outputs.status == 'success' && env.WEBDAV_URL && env.WEBDAV_USERNAME && env.WEBDAV_PASSWORD
-        env:
-          FILE_DATE: $(date +%Y%m%d)
-        run: |
-          set -e
-          echo "正在查找固件文件..."
-          FIRMWARE_FILES=$(find openwrt/bin/targets -type f \( -name "*sysupgrade*.*" -o -name "*factory*.*" \) ! -name "*-bl2*")
-          if [ -z "$FIRMWARE_FILES" ]; then
-            echo "未找到固件文件，跳过上传"
-            exit 0
-          fi
-          echo "找到文件: $FIRMWARE_FILES"
-          for FILE in $FIRMWARE_FILES; do
-            NEW_NAME="$(basename "$FILE" | sed "s/\.\([^.]*\)$/-${{ env.FILE_DATE }}.\1/")"
-            echo "上传: $FILE → $NEW_NAME"
-            RESPONSE=$(curl --retry 3 --retry-delay 5 -u "${{ env.WEBDAV_USERNAME }}:${{ env.WEBDAV_PASSWORD }}" \
-                   -T "$FILE" \
-                   "${{ env.WEBDAV_URL }}/$NEW_NAME" -w "%{http_code}" -o /dev/null)
-            if [ "$RESPONSE" -ne 201 ] && [ "$RESPONSE" -ne 204 ]; then
-              echo "上传失败: $NEW_NAME (HTTP 状态码: $RESPONSE)"
-              exit 1
-            fi
-            echo "上传成功: $NEW_NAME"
-          done
-          echo "上传完成！"
-
+          
       - name: 清理旧 Releases
         if: steps.tag.outputs.status == 'success'
         env:
