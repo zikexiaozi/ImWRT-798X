@@ -217,7 +217,7 @@ jobs:
           cd openwrt
           make download -j8 || { echo "下载软件包失败"; exit 1; }
           find dl -size -1024c -exec rm -f {} \; || echo "Warning: Failed to clean small files in dl directory"
-
+  
       - name: 修改 5G 25dB
         if: env.ENABLE_5G_25DB == 'true'
         working-directory: ./openwrt
