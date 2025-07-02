@@ -39,8 +39,7 @@ env:
   REPO_BRANCH: ${{ github.event.inputs.repo_branch || 'openwrt-24.10-6.6' }}
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: 24.10-6.6.config
-  DIY_P1_SH: scripts/diy-part1.sh
-  DIY_P2_SH: scripts/diy-part2.sh
+  DIY_SH: diy-part.sh
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
@@ -176,15 +175,7 @@ jobs:
 
       - name: 验证脚本文件
         run: |
-          if [ ! -f "$DIY_P1_SH" ]; then
-            echo "错误：未找到 $DIY_P1_SH"
-            exit 1
-          fi
-          if [ ! -f "$DIY_P2_SH" ]; then
-            echo "错误：未找到 $DIY_P2_SH"
-            exit 1
-          fi
-          chmod +x $DIY_P1_SH $DIY_P2_SH
+          chmod +x $DIY_SH
 
       - name: 加载 Feeds
         timeout-minutes: 10
@@ -204,7 +195,7 @@ jobs:
           [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
           echo "CONFIG_TARGET_mediatek_filogic_DEVICE_${{ matrix.device_model }}=y" >> openwrt/.config
           cd openwrt
-          $GITHUB_WORKSPACE/$DIY_P2_SH
+          $GITHUB_WORKSPACE/$DIY_SH
           make defconfig
 
       - name: 下载软件包
