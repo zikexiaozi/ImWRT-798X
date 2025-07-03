@@ -1,6 +1,6 @@
 # ImmortalWrt-Builder-24.10
 
-这是一个用于自动编译 [ImmortalWrt 24.10](https://github.com/padavanonly/immortalwrt-mt798x-24.10) 固件的 GitHub Actions 工作流，专为 CMCC 系列设备（基于 MediaTek MT7981）设计。支持每天检查源码更新、自动编译固件，并将 `sysupgrade.bin` 文件上传到 GitHub Release 和 WebDAV。
+这是一个用于自动编译 [ImmortalWrt 24.10](https://github.com/padavanonly/immortalwrt-mt798x-24.10) 固件的 GitHub Actions 工作流，专为 CMCC 系列设备（基于 MediaTek MT7981）设计。支持每天检查源码更新、自动编译固件，并将 `sysupgrade.bin` 文件上传到 GitHub Release。
 
 ## 功能
 - **支持的设备**：
@@ -19,7 +19,7 @@
 - 点击 **Run workflow**，选择：
   - `device_model`：目标 CMCC 设备型号。
   - `enable_5g_25db`：是否启用 5G 25dB 增强（默认：启用）。
-- 运行后，固件将上传到 GitHub Release 和 WebDAV。
+- 运行后，固件将上传到 GitHub Release
 
 ### 3. 定时触发
 - 无需手动操作，工作流每天（UTC 00:00，北京时间 08:00）检查源仓库 `padavanonly/immortalwrt-mt798x-24.10` 的 `2410` 分支。
