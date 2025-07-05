@@ -43,9 +43,6 @@ env:
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
-  WEBDAV_URL: ${{ secrets.WEBDAV_URL }}
-  WEBDAV_USERNAME: ${{ secrets.WEBDAV_USERNAME }}
-  WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
   ENABLE_5G_25DB: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.enable_5g_25db || secrets.ENABLE_5G_25DB || 'true' }}
 
 jobs:
