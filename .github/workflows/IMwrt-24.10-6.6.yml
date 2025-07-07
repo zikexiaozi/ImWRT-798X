@@ -102,7 +102,7 @@ jobs:
     runs-on: ubuntu-22.04
     strategy:
       matrix:
-        device_model: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', github.event.inputs.device_model)) || fromJSON('["cmcc_rax3000m", "cmcc_rax3000m-emmc", "huasifei_wh3000-emmc", "abt_asr3000", "cetron_ct3003", "cmcc_a10", "h3c_nx30pro", "imou_lc-hx3001", "jcg_q30", "konka_komi-a31", "livinet_zr-3020", "mt7981-360-t7-108M", "mt7981-clt-r30b1", "mt7981-clt-r30b1-112M", "xiaomi_mi-router-ax3000t", "xiaomi_mi-router-ax3000t-stock", "xiaomi_mi-router-wr30u-112m", "xiaomi_mi-router-wr30u-stock"]') }}
+        device_model: ${{ github.event_name == 'workflow_dispatch' && fromJSON(format('["{0}"]', github.event.inputs.device_model)) || fromJSON('["cmcc_rax3000m", "cmcc_rax3000m-emmc"]') }}
       max-parallel: 18
     steps:
       - name: 调试信息
