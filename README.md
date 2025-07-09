@@ -9,7 +9,7 @@
   - cmcc_rax3000m-emmc-usboffload
 - **自动编译**：每天（北京时间 08:00）检查源仓库更新，若有新提交，自动为所有 CMCC 机型编译固件。
 - **5G 25dB 增强**：支持启用 5G 高功率模式（默认启用，定时编译时固定启用，手动编译可选）。
-- **固件上传**：仅上传 `sysupgrade.bin` 文件到 GitHub Release 和 WebDAV，无 ZIP 压缩。
+- **固件上传**：仅上传 `sysupgrade.bin` 文件到 GitHub Release，无 ZIP 压缩。
 - **清理机制**：保留最近 30 个 GitHub Release 和 30 次工作流运行，自动删除旧记录以节省空间。
 
 ## 使用方法
@@ -27,7 +27,6 @@
 
 ### 4. 下载固件
 - **GitHub Release**：在仓库的 **Releases** 页面查找 `v24.10-<device_model>` 标签，下载 `sysupgrade.bin`。
-- **WebDAV**：通过配置的 WebDAV 服务器访问固件，文件名为 `<device_model>_25dB-<on/off>_<version>_sysupgrade.bin`。
 
 ### 5. 刷写固件
 - 确认设备型号与固件匹配。
