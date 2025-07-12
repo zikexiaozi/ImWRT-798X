@@ -166,10 +166,6 @@ jobs:
           fi
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-      - name: 验证脚本文件
-        run: |
-          chmod +x $DIY_SH
-
       - name: 加载 Feeds
         timeout-minutes: 10
         run: |
