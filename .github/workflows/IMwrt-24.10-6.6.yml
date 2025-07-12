@@ -116,6 +116,16 @@ jobs:
           echo "5G 25dB: ${{ env.ENABLE_5G_25DB }}"
           echo "上传 bin 目录: ${{ github.event.inputs.upload_bin_dir }}"
 
+      - name: 检查磁盘空间
+        run: |
+          MIN_SPACE=40
+          AVAILABLE=$(df --output=avail -B G . | tail -n 1 | tr -d ' ')
+          if [ -z "$AVAILABLE" ] || [ "$AVAILABLE" -lt "$MIN_SPACE" ]; then
+            echo "错误：磁盘空间不足，可用 ${AVAILABLE}G，需至少 ${MIN_SPACE}G"
+            exit 1
+          fi
+          echo "可用磁盘空间：${AVAILABLE}G"
+
       - name: 检出代码
         uses: actions/checkout@v4
 
