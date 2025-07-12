@@ -178,18 +178,13 @@ jobs:
           ./scripts/feeds update -a || { echo "更新 Feeds 失败"; exit 1; }
           ./scripts/feeds install -a || { echo "安装 Feeds 失败"; exit 1; }
 
-      - name: 加载配置
+      - name: 导入补丁配置
         run: |
           [ -e files ] && mv files openwrt/files
           [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
           echo "CONFIG_TARGET_mediatek_filogic_DEVICE_${{ matrix.device_model }}=y" >> openwrt/.config
           cd openwrt
-          
-      - name: 导入补丁配置
-        run: |
-          [ -e $CONFIG_FILE_MTKSDK ] && cat $CONFIG_FILE_MTKSDK >> openwrt/.config
           chmod +x $GITHUB_WORKSPACE/$DIY_SH && $GITHUB_WORKSPACE/$DIY_SH
-          chmod +x $GITHUB_WORKSPACE/$CLASH_CORE && $GITHUB_WORKSPACE/$CLASH_CORE
           make defconfig
 
       - name: 下载软件包
@@ -197,13 +192,13 @@ jobs:
         run: |
           cd openwrt
           make download -j8 || { echo "下载软件包失败"; exit 1; }
-          find dl -size -1024c -exec rm -f {} \; || echo "Warning: Failed to clean small files in dl directory"
-  
+          find dl -size -1024c -exec rm -fLas {} \; || echo "警告：无法清理 dl 目录中的小文件"
+          
       - name: 修改 5G 25dB
         if: env.ENABLE_5G_25DB == 'true'
         working-directory: ./openwrt
         run: |
-          EEPROM_FILE=$(find package -name MT7981_iPAiLNA_EEPROM.bin 2>/dev/null | head -n 1)
+          EEPROM_FILE=$(find package -type f -name "MT7981_iPAiLNA_EEPROM.bin" -print -quit 2>/dev/null)
           if [ -z "$EEPROM_FILE" ]; then
             echo "错误：未找到 EEPROM 文件"
             exit 1
@@ -243,11 +238,17 @@ jobs:
         if: steps.compile.outputs.status == 'success'
         run: |
           cd openwrt
-          VERSION=$(git rev-parse --short HEAD | cut -d'-' -f1 || echo "unknown")
-          SAFE_VERSION="r${VERSION}"
-          echo "提取的版本号: $SAFE_VERSION"
-          echo "FIRMWARE_VERSION=$SAFE_VERSION" >> $GITHUB_ENV
-          echo "status=success" >> $GITHUB_OUTPUT
+          if [ -f openwrt_release ]; then
+            VERSION=$(grep -E "^DISTRIB_REVISION=" openwrt_release | cut -d"'" -f2 | sed 's/\(r[0-9]\+\).*/\1/' | tr -d '[:space:]' || echo "unknown")
+            echo "提取的纯版本号: $VERSION"
+            echo "FIRMWARE_VERSION=$VERSION" >> $GITHUB_ENV
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            VERSION=$(git rev-parse --short HEAD | cut -d'-' -f1 || echo "unknown")
+            echo "openwrt_release 文件不存在，使用 Git 提交哈希: $VERSION"
+            echo "FIRMWARE_VERSION=$VERSION" >> $GITHUB_ENV
+            echo "status=success" >> $GITHUB_OUTPUT
+          fi
 
       - name: 整理固件并固定文件名
         id: organize
@@ -260,7 +261,7 @@ jobs:
             if [ -f "$file" ] && ! echo "$file" | grep -q "-bl2"; then
               TYPE=$(echo "$file" | grep -o "sysupgrade\|factory")
               EXT="${file##*.}"
-              NEW_NAME="${{ matrix.device_model }}_25dB-${{ env.ENABLE_5G_25DB == 'true' && 'on' || 'off' }}_${{ env.FIRMWARE_VERSION }}${{ env.FILE_DATE }}_${TYPE}.${EXT}"
+              NEW_NAME="${{ matrix.device_model }}_25dB-${{ env.ENABLE_5G_25DB == 'true' && 'on' || 'off' }}_${{ env.FIRMWARE_VERSION }}_${{ env.FILE_DATE }}_${TYPE}.${EXT}"
               mv "$file" "$NEW_NAME"
             fi
           done
