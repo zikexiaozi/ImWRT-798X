@@ -43,7 +43,7 @@ env:
   DIY_SH: diy-part.sh
   FREE_DISK_SH: free_disk_space.sh
   ENV_SH: environment.sh
-  CLASH_CORE: scripts/preset-clash-core.sh
+  CLASH_CORE: preset-clash-core.sh
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
@@ -123,7 +123,7 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          chmod +x $FREE_DISK_SH && $FREE_DISK_SH
+          chmod +x $GITHUB_WORKSPACE/$FREE_DISK_SH && $GITHUB_WORKSPACE/$FREE_DISK_SH
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           sudo docker image prune --all --force
           sudo apt-get update
